@@ -45,11 +45,10 @@ export const NAV_ITEMS = {
   ],
   OWNER: [
     { id: 'landing', label: 'Home' },
-    { id: 'venue-manager', label: 'My Venues', badge: 'Owner' },
+    { id: 'venue-manager', label: 'Venues & Bookings', badge: 'Owner' },
     { id: 'marketplace', label: 'Marketplace' },
     { id: 'community', label: 'Messages' },
     { id: 'tournaments', label: 'Tournaments' },
-    { id: 'dashboard', label: 'Bookings' },
     { id: 'profile', label: 'Profile' }
   ]
 };

@@ -1,14 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Building2, Plus, MapPin, IndianRupee, Clock, Users, Edit3, Trash2,
   X, CheckCircle, TrendingUp, Calendar, Shield, Star, ChevronDown,
   ToggleLeft, ToggleRight, Camera, Phone, Globe, Zap, AlertCircle,
-  Navigation, Compass, Loader2, Check, Lock, ShieldAlert
+  Navigation, Compass, Loader2, Check, Lock, ShieldAlert, MessageSquare,
+  XCircle, Filter
 } from 'lucide-react';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
-import { apiFetchVenues, apiCreateVenue, apiDeleteVenue, apiFetchBookings, apiUpdateBookingStatus, apiFetchOwnerBookings } from '../services/db';
+import { 
+  apiFetchVenues, 
+  apiCreateVenue, 
+  apiDeleteVenue, 
+  apiFetchBookings, 
+  apiUpdateBookingStatus, 
+  apiFetchOwnerBookings, 
+  apiUpdateVenueBookingMode, 
+  apiCreateDirectChat 
+} from '../services/db';
 import VenueImage from '../components/VenueImage';
+import UserAvatar from '../components/UserAvatar';
 import { useToast } from '../context';
 import { formatTime12Hour } from '../utils/formatters';
 import { fetchEnglishReverseGeocode, fetchEnglishSearchGeocode, sanitizeLocationToEnglish } from '../utils/locationHelper';
@@ -148,7 +159,7 @@ function AddVenueModal({ onClose, onAdd }) {
   const [isGpsLocked, setIsGpsLocked] = useState(false);
   const [form, setForm] = useState({
     name: '', location: '', latitude: initialCoords.lat.toString(), longitude: initialCoords.lng.toString(), sports: [], pricePerHour: '',
-    phone: '', description: '', image: '', fitMode: 'cover'
+    phone: '', description: '', image: '', fitMode: 'cover', booking_mode: 'direct'
   });
   const [sportInput, setSportInput] = useState('');
   const [isDetectingGps, setIsDetectingGps] = useState(false);
@@ -315,6 +326,9 @@ function AddVenueModal({ onClose, onAdd }) {
       lat: finalLat,
       lng: finalLng,
       pricePerHour: parseInt(form.pricePerHour) || 0,
+      booking_mode: form.booking_mode || 'direct',
+      booking_type: form.booking_mode || 'direct',
+      requires_approval: form.booking_mode === 'request',
       rating: 5.0,
       totalSlots: 12,
       bookedToday: 0,
@@ -553,6 +567,68 @@ function AddVenueModal({ onClose, onAdd }) {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Booking Approval Type Selector */}
+          <div className="space-y-3 p-4 bg-white/[0.02] border border-white/8 rounded-2xl">
+            <div className="flex items-center justify-between">
+              <label className={labelClass}>Booking Approval Type</label>
+              <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                form.booking_mode === 'request'
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                  : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+              }`}>
+                {form.booking_mode === 'request' ? '📩 Owner Approval Required' : '⚡ Direct Instant Booking'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, booking_mode: 'direct' }))}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  form.booking_mode === 'direct'
+                    ? 'bg-emerald-500/15 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
+                    : 'bg-white/[0.02] border-white/10 hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-black text-white flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                    Direct Booking
+                  </span>
+                  {form.booking_mode === 'direct' && (
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  )}
+                </div>
+                <p className="text-[10px] text-neutral-400 leading-relaxed">
+                  Players can instantly reserve and confirm available slots without waiting for approval.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, booking_mode: 'request' }))}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  form.booking_mode === 'request'
+                    ? 'bg-amber-500/15 border-amber-500/60 shadow-lg shadow-amber-500/10'
+                    : 'bg-white/[0.02] border-white/10 hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-black text-white flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    Request to Owner
+                  </span>
+                  {form.booking_mode === 'request' && (
+                    <CheckCircle className="w-4 h-4 text-amber-400" />
+                  )}
+                </div>
+                <p className="text-[10px] text-neutral-400 leading-relaxed">
+                  Players submit booking requests. You approve or reject before the slot is booked.
+                </p>
+              </button>
+            </div>
           </div>
 
           <div>
@@ -1310,7 +1386,7 @@ function ManageOffersModal({ venue, onClose, venueOffers, setVenueOffers }) {
 }
 
 /* ─── Venue Card ─────────────────────────────────────── */
-function VenueCard({ venue, onToggleActive, onUpdateSlot, onBatchUpdateSlots, onDelete, venueOffers, setVenueOffers }) {
+function VenueCard({ venue, onToggleActive, onToggleBookingMode, onUpdateSlot, onBatchUpdateSlots, onDelete, venueOffers, setVenueOffers }) {
   const [expanded, setExpanded] = useState(false);
   const [showOffersModal, setShowOffersModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -1322,6 +1398,15 @@ function VenueCard({ venue, onToggleActive, onUpdateSlot, onBatchUpdateSlots, on
       <div className="flex flex-col md:flex-row gap-5 p-5">
         <div className="w-full md:w-36 h-28 rounded-2xl overflow-hidden flex-shrink-0 relative">
           <VenueImage src={venue.image || venue.image_url} alt={venue.name} fitMode={venue.fitMode || 'cover'} className="w-full h-full" />
+          <div className="absolute top-2 left-2 flex flex-col gap-1">
+            <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase border shadow-md backdrop-blur-md ${
+              venue.booking_mode === 'request' || venue.requires_approval
+                ? 'bg-amber-400 text-black border-amber-300'
+                : 'bg-emerald-400 text-black border-emerald-300'
+            }`}>
+              {venue.booking_mode === 'request' || venue.requires_approval ? '📩 Request Mode' : '⚡ Direct Booking'}
+            </span>
+          </div>
           <div className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
             venue.active ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-neutral-800 border-white/10 text-neutral-500'
           }`}>
@@ -1385,7 +1470,7 @@ function VenueCard({ venue, onToggleActive, onUpdateSlot, onBatchUpdateSlots, on
       </div>
 
       {/* Action bar */}
-      <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 bg-white/[0.01]">
+      <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 bg-white/[0.01] flex-wrap gap-2">
         <div className="flex items-center space-x-2">
           <button
             onClick={() => onToggleActive(venue.id)}
@@ -1393,6 +1478,23 @@ function VenueCard({ venue, onToggleActive, onUpdateSlot, onBatchUpdateSlots, on
               venue.active ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-rose-500/10 hover:border-rose-500/20 hover:text-rose-400' : 'bg-white/5 border-white/10 text-neutral-400 hover:bg-emerald-500/10 hover:text-emerald-400'
             }`}>
             {venue.active ? <><ToggleRight className="w-4 h-4" /><span>Active</span></> : <><ToggleLeft className="w-4 h-4" /><span>Inactive</span></>}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onToggleBookingMode ? onToggleBookingMode(venue.id) : null}
+            title="Click to toggle between Direct Booking and Request Approval"
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+              venue.booking_mode === 'request' || venue.requires_approval
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+            }`}
+          >
+            {venue.booking_mode === 'request' || venue.requires_approval ? (
+              <><Clock className="w-3.5 h-3.5 text-amber-400" /><span>Request Mode</span></>
+            ) : (
+              <><Zap className="w-3.5 h-3.5 text-emerald-400" /><span>Direct Booking</span></>
+            )}
           </button>
         </div>
 
@@ -1511,15 +1613,34 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
   // Incoming Player Booking Requests
   const [ownerBookings, setOwnerBookings] = useState([]);
   const [rejectingTarget, setRejectingTarget] = useState(null);
+  const [activeSection, setActiveSection] = useState('venues'); // 'venues' | 'bookings'
+  const [bookingFilter, setBookingFilter] = useState('all'); // 'all' | 'pending' | 'confirmed' | 'rejected'
+
+  useEffect(() => {
+    const handleSectionNav = (e) => {
+      if (e.detail === 'venues' || e.detail === 'bookings') {
+        setActiveSection(e.detail);
+      }
+    };
+    window.addEventListener('turfington_venue_section', handleSectionNav);
+    return () => window.removeEventListener('turfington_venue_section', handleSectionNav);
+  }, []);
 
   useEffect(() => {
     const loadOwnerRequests = async () => {
       const ownerId = user?.id || user?.uid || user?.firebase_uid;
-      if (!ownerId) {
+      const ownerEmail = user?.email;
+      const ownerName = user?.full_name || user?.name;
+      if (!ownerId && !ownerEmail) {
         setOwnerBookings([]);
         return;
       }
-      const fetched = await apiFetchOwnerBookings(ownerId);
+      const fetched = await apiFetchOwnerBookings({
+        ownerId,
+        ownerUid: user?.firebase_uid || user?.uid,
+        ownerEmail,
+        ownerName
+      });
       setOwnerBookings(Array.isArray(fetched) ? fetched : []);
     };
     loadOwnerRequests();
@@ -1533,17 +1654,53 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
       window.removeEventListener('turfington_booking_created', handleCreated);
       window.removeEventListener('turfington_booking_updated', handleUpdated);
     };
-  }, [user?.id, user?.uid, user?.firebase_uid]);
+  }, [user?.id, user?.uid, user?.firebase_uid, user?.email, user?.full_name, user?.name]);
 
   const handleApproveBooking = async (bookingId) => {
     await apiUpdateBookingStatus(bookingId, 'CONFIRMED');
     setOwnerBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'CONFIRMED' } : b));
+    toast.success('Booking request approved and confirmed!');
   };
 
   const handleConfirmRejectBooking = async (bookingId, reason) => {
     await apiUpdateBookingStatus(bookingId, 'REJECTED', reason);
     setOwnerBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'REJECTED', rejection_reason: reason } : b));
     setRejectingTarget(null);
+    toast.info('Booking request declined.');
+  };
+
+  const handleChatWithPlayer = async (booking) => {
+    const currentOwnerId = user?.id || user?.uid || user?.firebase_uid;
+    const playerId = booking.user_id || booking.userId;
+    if (!playerId) {
+      toast.info('Player profile ID not found.');
+      return;
+    }
+    await apiCreateDirectChat(currentOwnerId, playerId, {
+      player_name: booking.player_name || booking.user_name || 'Player',
+      booking_id: booking.id,
+      venue_name: booking.venue || booking.title
+    });
+    window.dispatchEvent(new CustomEvent('turfington_navigate_tab', { detail: 'community' }));
+  };
+
+  const handleToggleBookingMode = async (venueId) => {
+    const venue = venues.find(v => v.id === venueId);
+    if (!venue) return;
+    const currentMode = venue.booking_mode || (venue.requires_approval ? 'request' : 'direct');
+    const newMode = currentMode === 'direct' ? 'request' : 'direct';
+
+    setVenues(prev => prev.map(v => v.id === venueId ? {
+      ...v,
+      booking_mode: newMode,
+      booking_type: newMode,
+      requires_approval: newMode === 'request'
+    } : v));
+
+    await apiUpdateVenueBookingMode(venueId, newMode);
+    toast.success(newMode === 'request'
+      ? `Venue "${venue.name}" now requires Owner Approval before confirmation.`
+      : `Venue "${venue.name}" now set to Direct Instant Booking.`);
   };
 
   useEffect(() => {
@@ -1571,6 +1728,8 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
           rating: v.rating || 5.0,
           pricePerHour: v.price_per_hr || 1000,
           image: v.image,
+          booking_mode: v.booking_mode || v.booking_type || (v.requires_approval ? 'request' : 'direct'),
+          requires_approval: v.requires_approval ?? (v.booking_mode === 'request'),
           totalSlots: 24,
           bookedToday: 0,
           revenue: { week: 0, month: 0 },
@@ -1624,7 +1783,10 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
       longitude: finalLng,
       city: user?.city || 'Chennai',
       price_per_hr: newVenueData.pricePerHour,
-      image: newVenueData.image
+      image: newVenueData.image,
+      booking_mode: newVenueData.booking_mode || 'direct',
+      booking_type: newVenueData.booking_mode || 'direct',
+      requires_approval: newVenueData.requires_approval
     });
 
     const newVenue = {
@@ -1640,6 +1802,9 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
       rating: 5.0,
       pricePerHour: newVenueData.pricePerHour,
       image: newVenueData.image || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=600',
+      booking_mode: newVenueData.booking_mode || 'direct',
+      booking_type: newVenueData.booking_mode || 'direct',
+      requires_approval: newVenueData.requires_approval,
       totalSlots: 24,
       bookedToday: 0,
       revenue: { week: 0, month: 0 },
@@ -1746,176 +1911,448 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
   const totalBooked = venues.reduce((sum, v) => sum + (v.bookedToday || 0), 0);
   const totalRevenue = venues.reduce((sum, v) => sum + (v.revenue?.week || 0), 0);
 
+  const pendingRequests = useMemo(() => {
+    return ownerBookings.filter(b => b.status === 'PENDING OWNER APPROVAL' || b.status === 'PENDING' || b.status === 'pending');
+  }, [ownerBookings]);
+
+  const confirmedBookings = useMemo(() => {
+    return ownerBookings.filter(b => b.status === 'CONFIRMED' || b.status === 'APPROVED' || b.status === 'confirmed');
+  }, [ownerBookings]);
+
+  const cancelledBookings = useMemo(() => {
+    return ownerBookings.filter(b => b.status === 'REJECTED' || b.status === 'cancelled' || b.status === 'rejected');
+  }, [ownerBookings]);
+
+  const filteredBookings = useMemo(() => {
+    if (bookingFilter === 'pending') return pendingRequests;
+    if (bookingFilter === 'confirmed') return confirmedBookings;
+    if (bookingFilter === 'rejected') return cancelledBookings;
+    return ownerBookings;
+  }, [ownerBookings, bookingFilter, pendingRequests, confirmedBookings, cancelledBookings]);
+
+  const ownerTotalRevenue = useMemo(() => {
+    return ownerBookings.reduce((sum, b) => {
+      const p = typeof b.price === 'number' ? b.price : (parseInt(String(b.price || 0).replace(/\D/g, ''), 10) || 0);
+      return sum + (b.status !== 'REJECTED' && b.status !== 'cancelled' ? p : 0);
+    }, 0);
+  }, [ownerBookings]);
+
   return (
     <div className="min-h-screen bg-transparent pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
 
       {/* ── Header ─────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
         <div>
           <div className="flex items-center space-x-2 mb-2">
             <Building2 className="w-5 h-5 text-violet-400" />
-            <span className="text-[10px] text-violet-400 uppercase font-extrabold tracking-widest">Owner Dashboard</span>
+            <span className="text-[10px] text-violet-400 uppercase font-extrabold tracking-widest">Facility Operations</span>
           </div>
-          <h1 className="text-3xl font-black font-display tracking-tight uppercase text-white">Venue Manager</h1>
-          <p className="text-xs text-neutral-500 mt-1">Manage your venues, slots, pricing, and availability</p>
+          <h1 className="text-3xl font-black font-display tracking-tight uppercase text-white">
+            Venues & Bookings
+          </h1>
+          <p className="text-xs text-neutral-400 mt-1">
+            Easily manage your facilities, court availability, pricing, and live player booking requests in one place.
+          </p>
         </div>
 
-        <button
-          onClick={() => setAddOpen(true)}
-          className="inline-flex items-center space-x-2 px-6 py-3.5 bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest rounded-full transition-all shadow-[0_0_20px_rgba(139,92,246,0.25)]">
-          <Plus className="w-4 h-4" />
-          <span>Add Venue</span>
-        </button>
+        {/* ── TWO-SECTION SWITCHER BUTTONS ───────────────── */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex items-center p-1.5 bg-[#121217] border border-white/10 rounded-2xl shadow-xl self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveSection('venues')}
+              className={`flex items-center space-x-2.5 px-5 py-2.5 rounded-xl text-xs font-display font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                activeSection === 'venues'
+                  ? 'bg-violet-600 text-white shadow-lg shadow-violet-600/30 scale-[1.02]'
+                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>My Venues</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                activeSection === 'venues' ? 'bg-white/20 text-white' : 'bg-white/5 text-neutral-400'
+              }`}>
+                {venues.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveSection('bookings')}
+              className={`flex items-center space-x-2.5 px-5 py-2.5 rounded-xl text-xs font-display font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                activeSection === 'bookings'
+                  ? 'bg-violet-600 text-white shadow-lg shadow-violet-600/30 scale-[1.02]'
+                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              <span>Bookings & Requests</span>
+              {pendingRequests.length > 0 ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-amber-400 text-black font-black animate-pulse shadow-md shadow-amber-400/30">
+                  {pendingRequests.length} Pending
+                </span>
+              ) : (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono ${
+                  activeSection === 'bookings' ? 'bg-white/20 text-white' : 'bg-white/5 text-neutral-400'
+                }`}>
+                  {ownerBookings.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {activeSection === 'venues' && (
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className="inline-flex items-center justify-center space-x-2 px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-[0_0_20px_rgba(139,92,246,0.25)] cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Venue</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* ── Summary Stats ──────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-        {[
-          { label: 'Total Venues', value: venues.length, sub: `${venues.filter(v=>v.active).length} active`, icon: <Building2 className="w-4 h-4" />, color: 'indigo' },
-          { label: 'Slots Booked Today', value: `${totalBooked}/${totalSlots}`, sub: `${Math.round(totalBooked/totalSlots*100)||0}% occupancy`, icon: <Calendar className="w-4 h-4" />, color: 'violet' },
-          { label: 'Weekly Revenue', value: `₹${totalRevenue.toLocaleString('en-IN')}`, sub: 'Across all venues', icon: <IndianRupee className="w-4 h-4" />, color: 'emerald' },
-          { label: 'Avg Rating', value: (venues.reduce((s,v)=>s+(v.rating||0),0)/venues.length||0).toFixed(1), sub: 'Player reviews', icon: <Star className="w-4 h-4" />, color: 'amber' },
-        ].map((stat, i) => (
-          <motion.div key={stat.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
-            className="glass-card p-5 border border-white/5">
-            <div className={`inline-flex p-2 rounded-xl mb-3 ${
-              stat.color === 'indigo' ? 'bg-indigo-500/10 text-indigo-400' :
-              stat.color === 'violet' ? 'bg-violet-500/10 text-violet-400' :
-              stat.color === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' :
-              'bg-amber-500/10 text-amber-400'
-            }`}>
-              {stat.icon}
-            </div>
-            <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider">{stat.label}</p>
-            <p className="text-xl font-black text-white font-display mt-1">{stat.value}</p>
-            <p className="text-[10px] text-neutral-600 mt-0.5">{stat.sub}</p>
-          </motion.div>
-        ))}
-      </div>
+      {/* ══════════════════════════════════════════════════════
+          SECTION 1: 🏟️ MY VENUES
+          ══════════════════════════════════════════════════════ */}
+      {activeSection === 'venues' && (
+        <div className="space-y-8">
+          {/* Summary Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Venues', value: venues.length, sub: `${venues.filter(v=>v.active).length} currently active`, icon: <Building2 className="w-4 h-4" />, color: 'indigo' },
+              { label: 'Today\'s Occupancy', value: `${totalBooked}/${totalSlots}`, sub: `${Math.round(totalBooked/totalSlots*100)||0}% court slots`, icon: <Calendar className="w-4 h-4" />, color: 'violet' },
+              { label: 'Weekly Revenue', value: `₹${totalRevenue.toLocaleString('en-IN')}`, sub: 'Across your venues', icon: <IndianRupee className="w-4 h-4" />, color: 'emerald' },
+              { label: 'Avg Rating', value: (venues.reduce((s,v)=>s+(v.rating||0),0)/venues.length||0).toFixed(1), sub: 'Player reviews', icon: <Star className="w-4 h-4" />, color: 'amber' },
+            ].map((stat, i) => (
+              <motion.div key={stat.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                className="glass-card p-5 border border-white/5">
+                <div className={`inline-flex p-2 rounded-xl mb-3 ${
+                  stat.color === 'indigo' ? 'bg-indigo-500/10 text-indigo-400' :
+                  stat.color === 'violet' ? 'bg-violet-500/10 text-violet-400' :
+                  stat.color === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' :
+                  'bg-amber-500/10 text-amber-400'
+                }`}>
+                  {stat.icon}
+                </div>
+                <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider">{stat.label}</p>
+                <p className="text-xl font-black text-white font-display mt-1">{stat.value}</p>
+                <p className="text-[10px] text-neutral-600 mt-0.5">{stat.sub}</p>
+              </motion.div>
+            ))}
+          </div>
 
-      {/* ── Incoming Player Booking Requests ────────────────────── */}
-      <div className="mb-12 text-left">
-        <div className="flex items-center justify-between mb-4">
+          {/* Venues List */}
           <div>
-            <div className="flex items-center space-x-2">
-              <Calendar className="w-4 h-4 text-amber-400" />
-              <h2 className="text-sm font-extrabold uppercase tracking-wider text-white">
-                Incoming Player Booking Requests
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-neutral-400">
+                Your Registered Venues <span className="text-neutral-600 ml-1">({venues.length})</span>
               </h2>
+              <span className="text-xs text-neutral-500">
+                Tip: Click on the booking mode pill to toggle between Direct Booking & Request Approval
+              </span>
             </div>
-            <p className="text-[10px] text-neutral-500 mt-0.5">Approve player slot requests or reject with a custom reason</p>
+
+            {venues.length === 0 ? (
+              <div className="glass-card p-12 text-center border border-dashed border-white/10 rounded-3xl space-y-4">
+                <Building2 className="w-12 h-12 text-neutral-600 mx-auto" />
+                <div>
+                  <h3 className="text-white font-bold text-lg font-display">No Venues Added Yet</h3>
+                  <p className="text-neutral-500 text-xs mt-1 max-w-md mx-auto">
+                    List your first sports facility to start accepting player bookings directly or with custom owner approval.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAddOpen(true)}
+                  className="inline-flex items-center space-x-2 px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-wider rounded-full transition-all cursor-pointer shadow-lg shadow-violet-600/25"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add First Venue</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {venues.map(venue => (
+                  <VenueCard
+                    key={venue.id}
+                    venue={venue}
+                    onToggleActive={handleToggleActive}
+                    onToggleBookingMode={handleToggleBookingMode}
+                    onUpdateSlot={handleUpdateSlot}
+                    onBatchUpdateSlots={handleBatchUpdateSlots}
+                    onDelete={handleDelete}
+                    venueOffers={venueOffers}
+                    setVenueOffers={setVenueOffers}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-          <span className="text-[10px] font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full">
-            {ownerBookings.filter(b => b.status === 'PENDING OWNER APPROVAL' || b.status === 'PENDING').length} Pending Requests
-          </span>
         </div>
+      )}
 
-        {ownerBookings.length === 0 ? (
-          <div className="glass-card p-6 text-center border border-white/5 text-xs text-neutral-500">
-            No player booking requests received yet.
+      {/* ══════════════════════════════════════════════════════
+          SECTION 2: 📋 BOOKINGS & REQUESTS
+          ══════════════════════════════════════════════════════ */}
+      {activeSection === 'bookings' && (
+        <div className="space-y-8">
+          {/* Bookings Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Bookings', value: ownerBookings.length, sub: 'All recorded player sessions', icon: <Calendar className="w-4 h-4" />, color: 'indigo' },
+              { label: 'Pending Requests', value: pendingRequests.length, sub: pendingRequests.length > 0 ? 'Action required by you' : 'Zero pending requests', icon: <Clock className="w-4 h-4" />, color: 'amber' },
+              { label: 'Confirmed Sessions', value: confirmedBookings.length, sub: 'Approved player slots', icon: <CheckCircle className="w-4 h-4" />, color: 'emerald' },
+              { label: 'Booking Revenue', value: `₹${ownerTotalRevenue.toLocaleString('en-IN')}`, sub: 'From confirmed sessions', icon: <IndianRupee className="w-4 h-4" />, color: 'violet' },
+            ].map((stat, i) => (
+              <motion.div key={stat.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                className="glass-card p-5 border border-white/5">
+                <div className={`inline-flex p-2 rounded-xl mb-3 ${
+                  stat.color === 'indigo' ? 'bg-indigo-500/10 text-indigo-400' :
+                  stat.color === 'violet' ? 'bg-violet-500/10 text-violet-400' :
+                  stat.color === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' :
+                  'bg-amber-500/10 text-amber-400'
+                }`}>
+                  {stat.icon}
+                </div>
+                <p className="text-[10px] text-neutral-500 uppercase font-bold tracking-wider">{stat.label}</p>
+                <p className="text-xl font-black text-white font-display mt-1">{stat.value}</p>
+                <p className="text-[10px] text-neutral-600 mt-0.5">{stat.sub}</p>
+              </motion.div>
+            ))}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {ownerBookings.map(req => {
-              const isPending = req.status === 'PENDING OWNER APPROVAL' || req.status === 'PENDING';
-              const isConfirmed = req.status === 'CONFIRMED' || req.status === 'APPROVED';
-              const isRejected = req.status === 'REJECTED';
 
-              return (
-                <div key={req.id} className="glass-card p-5 border border-white/5 space-y-3 relative overflow-hidden">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className={`inline-block text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border mb-1.5 ${
-                        isPending ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
-                        isConfirmed ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' :
-                        'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                      }`}>
-                        {isPending ? '⏳ Pending Your Approval' : isConfirmed ? '✓ Approved & Confirmed' : '✕ Rejected'}
+          {/* Filter Pills */}
+          <div className="flex flex-wrap items-center gap-2 p-1.5 bg-[#121217] border border-white/10 rounded-2xl w-fit">
+            {[
+              { id: 'all', label: 'All Bookings', count: ownerBookings.length },
+              { id: 'pending', label: '⏳ Needs Approval', count: pendingRequests.length, highlight: pendingRequests.length > 0 },
+              { id: 'confirmed', label: '✓ Confirmed', count: confirmedBookings.length },
+              { id: 'rejected', label: '✕ Rejected / Cancelled', count: cancelledBookings.length }
+            ].map(f => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setBookingFilter(f.id)}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  bookingFilter === f.id
+                    ? 'bg-violet-600 text-white shadow-md'
+                    : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span>{f.label}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                  f.highlight ? 'bg-amber-400 text-black font-black animate-pulse' : 'bg-white/10 text-neutral-300'
+                }`}>
+                  {f.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* ── Pending Booking Requests Highlights (if any) ── */}
+          {pendingRequests.length > 0 && (bookingFilter === 'all' || bookingFilter === 'pending') && (
+            <div className="glass-card p-6 border border-amber-500/30 rounded-3xl space-y-4 bg-gradient-to-br from-amber-500/[0.04] to-transparent">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+                    <Clock className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-display font-extrabold text-white uppercase tracking-tight">
+                      Booking Requests Awaiting Your Approval ({pendingRequests.length})
+                    </h2>
+                    <p className="text-xs text-neutral-400">Review requests from players and approve or decline with a reason</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                {pendingRequests.map(req => (
+                  <div key={req.id} className="p-5 bg-black/40 border border-white/10 rounded-2xl space-y-4 shadow-xl">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center space-x-3">
+                        <UserAvatar
+                          user={{
+                            full_name: req.player_name || req.user_name || 'Player',
+                            name: req.player_name || req.user_name || 'Player',
+                            avatar: req.avatar || req.player_avatar,
+                            avatar_url: req.player_avatar,
+                            uid: req.user_id
+                          }}
+                          className="w-10 h-10 border border-amber-500/30"
+                        />
+                        <div>
+                          <h3 className="font-bold text-white text-sm">{req.player_name || req.user_name || 'Player'}</h3>
+                          <p className="text-xs text-neutral-400">{req.player_phone || 'Phone on file'}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono font-extrabold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-lg">
+                        {req.price || `₹${req.amount_paid || 0}`}
                       </span>
-                      <h3 className="text-sm font-bold text-white">{req.player_name || req.user_name || 'Player'}</h3>
-                      <p className="text-[10px] text-neutral-400">{req.player_phone || '+91 98765 43210'}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-amber-400 font-mono">{req.price || `₹${req.amount_paid}`}</p>
-                      <p className="text-[9px] text-neutral-500 font-medium">{req.sport || 'Sports'}</p>
-                    </div>
-                  </div>
 
-                  <div className="p-2.5 bg-white/[0.02] border border-white/5 rounded-xl text-xs space-y-1">
-                    <p className="text-white font-medium">{req.title || req.venue_name || 'Turf Facility'}</p>
-                    <div className="flex items-center space-x-3 text-[10px] text-neutral-400">
-                      <span className="flex items-center space-x-1"><Calendar className="w-3 h-3 text-neutral-500" /><span>{req.date || 'Scheduled Date'}</span></span>
-                      <span className="flex items-center space-x-1"><Clock className="w-3 h-3 text-neutral-500" /><span>{formatTime12Hour(req.time || req.slot_time || 'Slot Time')}</span></span>
+                    <div className="p-3 bg-white/[0.03] border border-white/5 rounded-xl text-xs space-y-1">
+                      <p className="font-bold text-white">{req.title || req.venue_name || req.venue || 'Sports Venue'}</p>
+                      <div className="flex items-center space-x-3 text-neutral-400 text-[11px]">
+                        <span className="flex items-center space-x-1"><Calendar className="w-3 h-3 text-neutral-500" /><span>{req.date || 'Today'}</span></span>
+                        <span className="flex items-center space-x-1"><Clock className="w-3 h-3 text-neutral-500" /><span>{formatTime12Hour(req.time || req.slot_time || 'Slot Time')}</span></span>
+                        <span className="text-indigo-400 font-bold">{req.sport || 'Sports'}</span>
+                      </div>
                     </div>
-                  </div>
 
-                  {isRejected && req.rejection_reason && (
-                    <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-[10px] text-rose-300">
-                      <span className="font-bold">Rejection Reason:</span> {req.rejection_reason}
-                    </div>
-                  )}
-
-                  {isPending && (
-                    <div className="flex items-center space-x-2 pt-1">
+                    <div className="flex items-center gap-2 pt-1">
                       <button
+                        type="button"
                         onClick={() => handleApproveBooking(req.id)}
-                        className="flex-1 py-2 px-3 bg-[#00df82] hover:bg-[#00c774] text-black font-black text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer shadow-md shadow-[#00df82]/20"
+                        className="flex-1 py-2.5 px-3 bg-[#00df82] hover:bg-[#00c774] text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-md shadow-[#00df82]/20"
                       >
-                        <CheckCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <CheckCircle className="w-4 h-4 stroke-[2.5]" />
                         <span>Approve Request</span>
                       </button>
                       <button
+                        type="button"
                         onClick={() => setRejectingTarget(req)}
-                        className="flex-1 py-2 px-3 bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                        className="py-2.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
                       >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Reject Request</span>
+                        <X className="w-4 h-4" />
+                        <span>Reject</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleChatWithPlayer(req)}
+                        className="py-2.5 px-3 bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 hover:text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                        title="Chat with requesting player"
+                      >
+                        <MessageSquare className="w-4 h-4 text-indigo-400" />
                       </button>
                     </div>
-                  )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* All Bookings Table / Cards */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-extrabold text-white text-sm uppercase tracking-wider">
+                Bookings Records ({filteredBookings.length})
+              </h3>
+            </div>
+
+            {filteredBookings.length === 0 ? (
+              <div className="glass-card p-12 text-center border border-dashed border-white/10 rounded-3xl space-y-2">
+                <Calendar className="w-10 h-10 text-neutral-600 mx-auto mb-2" />
+                <h4 className="text-white font-bold text-base">No Bookings Found</h4>
+                <p className="text-xs text-neutral-500 max-w-sm mx-auto">
+                  {bookingFilter !== 'all'
+                    ? `No bookings match your selected filter (${bookingFilter}). Try switching to "All Bookings".`
+                    : 'When players reserve or request slots at your venues, their bookings will appear here in real time.'}
+                </p>
+              </div>
+            ) : (
+              <div className="glass-card border border-white/5 overflow-hidden rounded-2xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-white/5 bg-white/[0.02]">
+                        {['Player', 'Venue', 'Sport', 'Scheduled Slot', 'Amount', 'Status', 'Actions'].map(h => (
+                          <th key={h} className="px-5 py-3.5 text-[10px] font-extrabold uppercase tracking-widest text-neutral-500">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredBookings.map(b => {
+                        const priceNum = typeof b.price === 'number' ? b.price : (parseInt(String(b.price || 0).replace(/\D/g, ''), 10) || 0);
+                        const playerName = b.player_name || b.user_name || 'Player';
+                        const venueTitle = b.venue || b.venue_name || b.title || 'Venue';
+                        const timeStr = b.time || b.slot_time || 'Scheduled Slot';
+                        const isPending = b.status === 'PENDING OWNER APPROVAL' || b.status === 'PENDING' || b.status === 'pending';
+                        const isConfirmed = b.status === 'CONFIRMED' || b.status === 'APPROVED' || b.status === 'confirmed';
+                        const isRejected = b.status === 'REJECTED' || b.status === 'cancelled' || b.status === 'rejected';
+
+                        return (
+                          <tr key={b.id} className={`border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors ${isRejected ? 'opacity-60' : ''}`}>
+                            <td className="px-5 py-3.5">
+                              <div className="flex items-center gap-2.5">
+                                <UserAvatar
+                                  user={{
+                                    full_name: playerName,
+                                    name: playerName,
+                                    avatar: b.avatar || b.player_avatar,
+                                    avatar_url: b.player_avatar,
+                                    uid: b.user_id
+                                  }}
+                                  className="w-7 h-7 text-[10px]"
+                                />
+                                <div>
+                                  <span className="font-bold text-white block">{playerName}</span>
+                                  {b.player_phone && <span className="text-[10px] text-neutral-500 block">{b.player_phone}</span>}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-5 py-3.5 text-neutral-300 font-medium">{venueTitle}</td>
+                            <td className="px-5 py-3.5 text-neutral-400">{b.sport || 'Sports'}</td>
+                            <td className="px-5 py-3.5 text-neutral-300 font-mono">
+                              {b.date ? `${b.date} • ` : ''}{formatTime12Hour(timeStr)}
+                            </td>
+                            <td className="px-5 py-3.5 font-bold text-white">
+                              ₹{priceNum.toLocaleString('en-IN')}
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                                isPending ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
+                                isConfirmed ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' :
+                                'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                              }`}>
+                                {isPending ? '⏳ Pending Approval' : isConfirmed ? '✓ Confirmed' : '✕ Rejected'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <div className="flex items-center space-x-2">
+                                {isPending ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApproveBooking(b.id)}
+                                      className="px-2.5 py-1 bg-[#00df82]/20 hover:bg-[#00df82]/30 border border-[#00df82]/40 text-[#00df82] text-[10px] font-extrabold uppercase rounded-lg transition-all cursor-pointer"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRejectingTarget(b)}
+                                      className="px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 text-[10px] font-extrabold uppercase rounded-lg transition-all cursor-pointer"
+                                    >
+                                      Decline
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleChatWithPlayer(b)}
+                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-all cursor-pointer"
+                                    title="Message Player"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-
-      {/* ── Venues List ────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-sm font-extrabold uppercase tracking-wider text-neutral-400">
-            Your Venues <span className="text-neutral-600 ml-1">({venues.length})</span>
-          </h2>
         </div>
-
-        {venues.length === 0 ? (
-          <div className="glass-card p-12 text-center border border-dashed border-white/10">
-            <Building2 className="w-10 h-10 text-neutral-700 mx-auto mb-4" />
-            <h3 className="text-white font-bold text-base font-display mb-2">No Venues Yet</h3>
-            <p className="text-neutral-500 text-sm mb-6">List your first venue to start accepting bookings.</p>
-            <button onClick={() => setAddOpen(true)}
-              className="inline-flex items-center space-x-2 px-6 py-3 bg-violet-600 text-white font-bold text-xs uppercase rounded-full transition-colors hover:bg-violet-500">
-              <Plus className="w-4 h-4" />
-              <span>Add My First Venue</span>
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {venues.map(venue => (
-              <VenueCard
-                key={venue.id}
-                venue={venue}
-                onToggleActive={handleToggleActive}
-                onUpdateSlot={handleUpdateSlot}
-                onBatchUpdateSlots={handleBatchUpdateSlots}
-                onDelete={handleDelete}
-                venueOffers={venueOffers}
-                setVenueOffers={setVenueOffers}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* ── Add Venue Modal ─────────────────────────────── */}
       <AnimatePresence>

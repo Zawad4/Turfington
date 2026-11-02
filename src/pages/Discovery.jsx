@@ -857,6 +857,9 @@ export default function Discovery({
     const imageStr = activePrepaidVenue.image || activePrepaidVenue.image_url || 'https://images.unsplash.com/photo-1538388149142-f82611d4d6c4?q=80&w=400';
 
     const isHosted = activePrepaidVenue.slotMeta?.bookingType === 'open_match';
+    const requiresApproval = activePrepaidVenue.booking_mode === 'request' || activePrepaidVenue.requires_approval === true;
+    const initialStatus = requiresApproval ? 'PENDING OWNER APPROVAL' : 'CONFIRMED';
+
     const newBooking = {
       id: bookingId,
       venue_id: activePrepaidVenue.id || 'v_default',
@@ -869,11 +872,13 @@ export default function Discovery({
       slot_time: timeStr,
       price: priceStr,
       image: imageStr,
-      status: 'PENDING OWNER APPROVAL',
+      status: initialStatus,
+      booking_mode: requiresApproval ? 'request' : 'direct',
+      requires_approval: requiresApproval,
       paymentType: 'Pay at Venue',
       payment_type: 'pay_at_venue',
-      paymentStatus: 'Pay on Arrival',
-      payment_status: 'pending_at_venue',
+      paymentStatus: requiresApproval ? 'Pending Owner Approval' : 'Confirmed (Pay at Venue)',
+      payment_status: requiresApproval ? 'pending_approval' : 'confirmed',
       user_id: user?.id || user?.uid || user?.firebase_uid || 'usr_guest',
       user_name: user?.full_name || user?.name || 'Player',
       player_name: user?.full_name || user?.name || 'Player',
@@ -1418,6 +1423,15 @@ export default function Discovery({
                                 {turf.isNew && (
                                   <span className="bg-emerald-500 text-black px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg flex items-center gap-1 animate-pulse">
                                     ✨ NEW
+                                  </span>
+                                )}
+                                {turf.booking_mode === 'request' || turf.requires_approval ? (
+                                  <span className="bg-amber-400 text-black px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-md flex items-center gap-1">
+                                    <Clock className="w-2.5 h-2.5" /> Request
+                                  </span>
+                                ) : (
+                                  <span className="bg-emerald-400 text-black px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-md flex items-center gap-1">
+                                    <Zap className="w-2.5 h-2.5" /> Direct
                                   </span>
                                 )}
                               </div>
@@ -2359,15 +2373,24 @@ export default function Discovery({
               className="relative glass-card w-full max-w-[400px] p-6 border border-white/10 shadow-2xl text-left z-10"
             >
               <div className="space-y-5">
-                <div className="flex items-center space-x-2 pb-3 border-b border-white/5">
-                  <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-                    <Check className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <h3 className="font-display font-black text-sm uppercase">Confirm Venue Booking</h3>
-                    <p className="text-[9px] text-emerald-400 font-medium">No Prepaid Online Payment Required • Pay at Venue</p>
-                  </div>
-                </div>
+                {(() => {
+                  const requiresApproval = activePrepaidVenue.booking_mode === 'request' || activePrepaidVenue.requires_approval === true;
+                  return (
+                    <div className="flex items-center space-x-2 pb-3 border-b border-white/5">
+                      <div className={`p-2 rounded-full ${requiresApproval ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-emerald-500/10 border border-emerald-500/20'}`}>
+                        {requiresApproval ? <Clock className="w-4 h-4 text-amber-400" /> : <Check className="w-4 h-4 text-emerald-400" />}
+                      </div>
+                      <div>
+                        <h3 className="font-display font-black text-sm uppercase">
+                          {requiresApproval ? 'Request Slot from Owner' : 'Confirm Direct Booking'}
+                        </h3>
+                        <p className={`text-[9px] font-medium ${requiresApproval ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {requiresApproval ? 'Owner Approval Required • Pay at Venue on Approval' : 'Instant Direct Reservation • Pay at Venue'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Booking description summary */}
                 <div className="space-y-3 bg-white/[0.02] border border-white/5 rounded-xl p-4 text-xs font-light">
@@ -2416,20 +2439,24 @@ export default function Discovery({
                   <button 
                     onClick={handleConfirmVenueBooking}
                     disabled={isPaying || paymentSuccess}
-                    className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black uppercase tracking-wider rounded-full transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+                    className={`flex-1 py-3 text-xs font-black uppercase tracking-wider rounded-full transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50 ${
+                      activePrepaidVenue?.booking_mode === 'request' || activePrepaidVenue?.requires_approval
+                        ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]'
+                    }`}
                   >
                     {isPaying ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Reserving...</span>
+                        <span>Submitting...</span>
                       </>
                     ) : paymentSuccess ? (
                       <>
                         <Check className="w-3.5 h-3.5" />
-                        <span>Booked!</span>
+                        <span>{activePrepaidVenue?.booking_mode === 'request' || activePrepaidVenue?.requires_approval ? 'Request Sent!' : 'Booked!'}</span>
                       </>
                     ) : (
-                      <span>Confirm Booking</span>
+                      <span>{activePrepaidVenue?.booking_mode === 'request' || activePrepaidVenue?.requires_approval ? 'Send Booking Request' : 'Confirm Direct Booking'}</span>
                     )}
                   </button>
                 </div>
@@ -2725,10 +2752,12 @@ export default function Discovery({
                 transition={{ delay: 0.25 }}
               >
                 <h3 className="font-display font-black text-2xl text-white tracking-tight">
-                  Booking Confirmed!
+                  {bookingCelebrationData.status === 'PENDING OWNER APPROVAL' ? 'Booking Request Sent!' : 'Booking Confirmed!'}
                 </h3>
-                <p className="text-xs text-emerald-400 font-semibold mt-1">
-                  Your turf slot has been successfully reserved
+                <p className={`text-xs font-semibold mt-1 ${bookingCelebrationData.status === 'PENDING OWNER APPROVAL' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  {bookingCelebrationData.status === 'PENDING OWNER APPROVAL'
+                    ? 'Your request has been submitted to the venue owner. You will be notified once approved!'
+                    : 'Your turf slot has been successfully reserved directly'}
                 </p>
               </motion.div>
 

@@ -2496,6 +2496,9 @@ export async function apiCreateVenue(venueData) {
   const ownerId = venueData.owner_id || venueData.ownerId || currentAuthUid || 'usr_venue_owner';
   const ownerEmail = (venueData.owner_email || auth.currentUser?.email || '').toLowerCase().trim();
 
+  const bookingMode = venueData.booking_mode || venueData.booking_type || (venueData.requires_approval ? 'request' : 'direct');
+  const requiresApproval = venueData.requires_approval ?? (bookingMode === 'request');
+
   const customVenue = {
     id: venueData.id || ('venue_' + Date.now()),
     name: venueData.name,
@@ -2516,6 +2519,9 @@ export async function apiCreateVenue(venueData) {
     reviewsCount: 1,
     image_url: resolvedImg,
     image: resolvedImg,
+    booking_mode: bookingMode,
+    booking_type: bookingMode,
+    requires_approval: requiresApproval,
     description: venueData.description || 'Newly added sports venue on Turfington.',
     is_open_24_hours: true,
     isNew: true,
@@ -2711,6 +2717,31 @@ export async function apiDeleteVenue(venueInput, venueDataInput = null) {
   return { success: true };
 }
 
+export async function apiUpdateVenueBookingMode(venueId, newMode) {
+  const isRequest = newMode === 'request';
+  try {
+    const existingStr = localStorage.getItem('turfington_custom_venues');
+    if (existingStr) {
+      const existing = JSON.parse(existingStr);
+      const updated = existing.map(v => (v.id === venueId || v.name === venueId) ? { ...v, booking_mode: newMode, booking_type: newMode, requires_approval: isRequest } : v);
+      localStorage.setItem('turfington_custom_venues', JSON.stringify(updated));
+    }
+  } catch {}
+
+  try {
+    const vIdStr = String(venueId);
+    await Promise.allSettled([
+      setDoc(doc(db, 'venues', vIdStr), { booking_mode: newMode, booking_type: newMode, requires_approval: isRequest }, { merge: true }),
+      setDoc(doc(db, 'turfs', vIdStr), { booking_mode: newMode, booking_type: newMode, requires_approval: isRequest }, { merge: true })
+    ]);
+  } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_venues_updated'));
+  }
+  return { success: true, booking_mode: newMode };
+}
+
 
 // -- 5. Bookings ---------------------------------------------
 
@@ -2782,10 +2813,15 @@ export async function apiCreateBooking(bookingData) {
   const rawTime = bookingData.time || bookingData.slot_time || 'Today, Flexible Slot';
   const rawDate = bookingData.date || (rawTime.includes(',') ? rawTime.split(',')[0].trim() : 'Today');
 
+  const defaultStatus = (bookingData.booking_mode === 'request' || bookingData.requires_approval) 
+    ? 'PENDING OWNER APPROVAL' 
+    : (bookingData.status || 'CONFIRMED');
+
   const newBooking = {
     id: bookingId,
     created_at: bookingData.created_at || new Date().toISOString(),
-    status: bookingData.status || 'PENDING OWNER APPROVAL',
+    status: bookingData.status || defaultStatus,
+    booking_mode: bookingData.booking_mode || ((bookingData.status === 'PENDING OWNER APPROVAL' || bookingData.requires_approval) ? 'request' : 'direct'),
     rejection_reason: bookingData.rejection_reason || null,
     venue: venueTitle,
     venue_name: venueTitle,

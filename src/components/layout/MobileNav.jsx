@@ -19,11 +19,10 @@ export default function MobileNav({
   const tabs = isOwner
     ? [
         { id: 'landing', Icon: HomeIcon, label: 'Home' },
-        { id: 'venue-manager', Icon: Building2, label: 'Venues' },
+        { id: 'venue-manager', Icon: Building2, label: 'Venues & Bookings' },
         { id: 'marketplace', Icon: ShoppingBag, label: 'Marketplace' },
         { id: 'community', Icon: MessageSquare, label: 'Messages' },
-        { id: 'tournaments', Icon: Trophy, label: 'Tournaments' },
-        { id: 'dashboard', Icon: LayoutDashboard, label: 'Bookings' }
+        { id: 'tournaments', Icon: Trophy, label: 'Tournaments' }
       ]
     : [
         { id: 'landing', Icon: HomeIcon, label: 'Home' },

@@ -245,7 +245,7 @@ export default function App() {
 
   /* ── Navigation Handlers ───────────────────────────────────── */
   useEffect(() => {
-    if (isOwner && activeTab === 'discovery') {
+    if (isOwner && (activeTab === 'discovery' || activeTab === 'dashboard')) {
       setActiveTab('venue-manager');
     } else if (!isOwner && activeTab === 'venue-manager') {
       setActiveTab('landing');
@@ -263,7 +263,7 @@ export default function App() {
   }, []);
 
   const handleNavClick = (tab) => {
-    const target = isOwner && tab === 'discovery' ? 'venue-manager' : tab;
+    const target = isOwner && (tab === 'discovery' || tab === 'dashboard') ? 'venue-manager' : tab;
     setNavHistory((prev) => (prev[prev.length - 1] === target ? prev : [...prev, target]));
     setActiveTab(target);
     window.scrollTo({ top: 0, behavior: 'smooth' });
