@@ -160,15 +160,34 @@ const SPORT_COLORS = {
 /* ─── Add Venue Modal ────────────────────────────────── */
 function AddVenueModal({ onClose, onAdd }) {
   const { toast } = useToast();
+  const getInitialCoords = () => {
+    try {
+      const saved = localStorage.getItem('turfington_last_known_gps');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.lat && parsed?.lng) {
+          const lat = parseFloat(parsed.lat);
+          const lng = parseFloat(parsed.lng);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            return { lat, lng };
+          }
+        }
+      }
+    } catch {}
+    return { lat: 13.0827, lng: 80.2707 };
+  };
+
+  const initialCoords = getInitialCoords();
+  const [isGpsLocked, setIsGpsLocked] = useState(false);
   const [form, setForm] = useState({
-    name: '', location: '', latitude: '13.0827', longitude: '80.2707', sports: [], pricePerHour: '',
+    name: '', location: '', latitude: initialCoords.lat.toString(), longitude: initialCoords.lng.toString(), sports: [], pricePerHour: '',
     phone: '', description: '', image: '', fitMode: 'cover'
   });
   const [sportInput, setSportInput] = useState('');
   const [isDetectingGps, setIsDetectingGps] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [locationFeedback, setLocationFeedback] = useState('⚡ Auto-Calculated');
-  const [pickedCoords, setPickedCoords] = useState({ lat: 13.0827, lng: 80.2707 });
+  const [pickedCoords, setPickedCoords] = useState(initialCoords);
   const [mapPickedAddress, setMapPickedAddress] = useState('');
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
 
@@ -199,6 +218,11 @@ function AddVenueModal({ onClose, onAdd }) {
   /* Automatic Geocoding when Address changes */
   const handleAddressChange = (addressValue) => {
     setForm(prev => ({ ...prev, location: addressValue }));
+
+    // If the owner has locked exact GPS satellite coordinates or picked map pin, DO NOT overwrite with geocode centroid!
+    if (isGpsLocked) {
+      return;
+    }
     if (!addressValue || addressValue.trim().length < 3) return;
 
     setIsGeocodingAddress(true);
@@ -219,28 +243,15 @@ function AddVenueModal({ onClose, onAdd }) {
         if (data && data.length > 0) {
           let lat = parseFloat(parseFloat(data[0].lat).toFixed(6));
           let lng = parseFloat(parseFloat(data[0].lon).toFixed(6));
-          // Sanity check: ensure coordinates are within India / Chennai region
-          if (isNaN(lat) || isNaN(lng) || lat < 8 || lat > 36 || lng < 68 || lng > 97) {
-            lat = parseFloat((13.0827 + (Math.random() - 0.5) * 0.04).toFixed(6));
-            lng = parseFloat((80.2707 + (Math.random() - 0.5) * 0.04).toFixed(6));
+          // Sanity check: ensure coordinates are valid
+          if (!isNaN(lat) && !isNaN(lng) && lat >= 8 && lat <= 36 && lng >= 68 && lng <= 97) {
+            setForm(prev => ({ ...prev, latitude: lat.toString(), longitude: lng.toString() }));
+            setPickedCoords({ lat, lng });
+            setLocationFeedback(`✓ Coordinates auto-calculated (${lat}°, ${lng}°)`);
           }
-          setForm(prev => ({ ...prev, latitude: lat.toString(), longitude: lng.toString() }));
-          setPickedCoords({ lat, lng });
-          setLocationFeedback(`✓ Coordinates auto-calculated (${lat}°, ${lng}°)`);
-        } else {
-          const lat = parseFloat((13.0827 + (Math.random() - 0.5) * 0.04).toFixed(6));
-          const lng = parseFloat((80.2707 + (Math.random() - 0.5) * 0.04).toFixed(6));
-          setForm(prev => ({ ...prev, latitude: lat.toString(), longitude: lng.toString() }));
-          setPickedCoords({ lat, lng });
-          setLocationFeedback(`✓ Coordinates set (${lat}°, ${lng}°)`);
         }
       } catch (e) {
         console.warn('Address geocode error:', e);
-        const lat = parseFloat((13.0827 + (Math.random() - 0.5) * 0.04).toFixed(6));
-        const lng = parseFloat((80.2707 + (Math.random() - 0.5) * 0.04).toFixed(6));
-        setForm(prev => ({ ...prev, latitude: lat.toString(), longitude: lng.toString() }));
-        setPickedCoords({ lat, lng });
-        setLocationFeedback(`✓ Coordinates set (${lat}°, ${lng}°)`);
       } finally {
         setIsGeocodingAddress(false);
       }
@@ -252,40 +263,63 @@ function AddVenueModal({ onClose, onAdd }) {
       toast.error("Geolocation is not supported by your browser.");
       return;
     }
+    if (window._geocodeTimer) {
+      clearTimeout(window._geocodeTimer);
+      window._geocodeTimer = null;
+    }
     setIsDetectingGps(true);
-    setLocationFeedback('Detecting GPS location...');
+    setLocationFeedback('Acquiring high-precision GPS...');
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = parseFloat(pos.coords.latitude.toFixed(6));
-        const lng = parseFloat(pos.coords.longitude.toFixed(6));
+    const onGpsSuccess = async (pos) => {
+      const lat = parseFloat(pos.coords.latitude.toFixed(6));
+      const lng = parseFloat(pos.coords.longitude.toFixed(6));
 
-        let address = `${lat}, ${lng}`;
-        try {
-          const geo = await fetchEnglishReverseGeocode(lat, lng, 14);
-          address = geo.fullAddress || `${geo.city}, Tamil Nadu`;
-        } catch (e) {
-          console.warn('Reverse geocode warning:', e);
-          address = 'Chennai, Tamil Nadu';
-        }
+      // Persist to shared localStorage so Discovery and other profiles immediately use the exact coordinates
+      try {
+        localStorage.setItem('turfington_last_known_gps', JSON.stringify({ lat, lng, timestamp: Date.now() }));
+        window.dispatchEvent(new CustomEvent('turfington_gps_updated', { detail: { lat, lng } }));
+      } catch {}
 
-        setForm(prev => ({
-          ...prev,
-          location: address,
-          latitude: lat.toString(),
-          longitude: lng.toString()
-        }));
-        setPickedCoords({ lat, lng });
-        setIsDetectingGps(false);
-        setLocationFeedback(`✓ Current GPS location set (${lat}°, ${lng}°)`);
-      },
-      (err) => {
-        console.error('GPS error:', err);
-        setIsDetectingGps(false);
-        toast.warning("Unable to fetch current GPS location. Please check browser permissions or choose from Map.");
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
+      setPickedCoords({ lat, lng });
+      setForm(prev => ({
+        ...prev,
+        latitude: lat.toString(),
+        longitude: lng.toString()
+      }));
+      setIsGpsLocked(true);
+      setIsDetectingGps(false);
+      setLocationFeedback(`✓ Exact GPS coordinates locked (${lat}°, ${lng}°)`);
+
+      // Reverse geocode in English for human-readable textual location without altering coordinates
+      try {
+        const geo = await fetchEnglishReverseGeocode(lat, lng, 14);
+        const resolvedAddr = geo.fullAddress || `${geo.city}, Tamil Nadu`;
+        setForm(prev => ({ ...prev, location: resolvedAddr }));
+      } catch (e) {
+        console.warn('Reverse geocode warning:', e);
+        setForm(prev => ({ ...prev, location: prev.location || `${lat}, ${lng}` }));
+      }
+    };
+
+    const onGpsError = (err) => {
+      console.warn('High-accuracy GPS failed or timed out, trying standard accuracy...', err);
+      navigator.geolocation.getCurrentPosition(
+        onGpsSuccess,
+        (err2) => {
+          console.error('GPS error:', err2);
+          setIsDetectingGps(false);
+          toast.warning("Unable to fetch exact GPS location. Please check browser permissions or choose from Map.");
+          setLocationFeedback('⚠ GPS detection failed. Choose from Map');
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+      );
+    };
+
+    navigator.geolocation.getCurrentPosition(onGpsSuccess, onGpsError, {
+      enableHighAccuracy: true,
+      timeout: 8000,
+      maximumAge: 0
+    });
   };
 
   const handleReverseGeocodePicked = async (lat, lng) => {
@@ -311,6 +345,8 @@ function AddVenueModal({ onClose, onAdd }) {
       ...form,
       latitude: finalLat,
       longitude: finalLng,
+      lat: finalLat,
+      lng: finalLng,
       pricePerHour: parseInt(form.pricePerHour) || 0,
       rating: 5.0,
       totalSlots: 12,
@@ -427,8 +463,18 @@ function AddVenueModal({ onClose, onAdd }) {
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-neutral-400 font-extrabold uppercase tracking-wider">Calculated GPS Coordinates</span>
-                    <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded">Auto-Set</span>
+                    <span className="text-[10px] text-neutral-400 font-extrabold uppercase tracking-wider">
+                      {isGpsLocked ? 'Locked GPS Coordinates' : 'Calculated GPS Coordinates'}
+                    </span>
+                    {isGpsLocked ? (
+                      <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded flex items-center gap-1">
+                        🔒 Exact GPS Locked
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 rounded">
+                        Auto-Set
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs text-white font-mono font-bold mt-0.5 block">
                     {form.latitude && form.longitude
@@ -438,13 +484,27 @@ function AddVenueModal({ onClose, onAdd }) {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowMapPicker(true)}
-                className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 underline uppercase tracking-wider"
-              >
-                Adjust Pin
-              </button>
+              <div className="flex items-center gap-2">
+                {isGpsLocked && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsGpsLocked(false);
+                      setLocationFeedback('GPS unlocked - will update if address changes');
+                    }}
+                    className="text-[10px] font-bold text-neutral-400 hover:text-white underline uppercase tracking-wider"
+                  >
+                    Unlock
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowMapPicker(true)}
+                  className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 underline uppercase tracking-wider"
+                >
+                  Adjust Pin
+                </button>
+              </div>
             </div>
           </div>
 
@@ -641,6 +701,7 @@ function AddVenueModal({ onClose, onAdd }) {
                       longitude: pickedCoords.lng.toString(),
                       location: sanitizeLocationToEnglish(mapPickedAddress || prev.location || 'Anna Nagar, Chennai')
                     }));
+                    setIsGpsLocked(true);
                     setShowMapPicker(false);
                     setLocationFeedback(`✓ Map location set: ${pickedCoords.lat}°, ${pickedCoords.lng}°`);
                   }}
@@ -1281,7 +1342,7 @@ function VenueCard({ venue, onToggleActive, onUpdateSlot, onDelete, venueOffers,
 }
 
 /* ─── Main Page ──────────────────────────────────────── */
-export default function VenueManager({ user, venueOffers, setVenueOffers, onBackToPlayer }) {
+export default function VenueManager({ user, venueOffers, setVenueOffers, onBackToPlayer, onOpenProfileSwitcher }) {
   const [venues, setVenues] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
 
@@ -1383,6 +1444,8 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
       alert('Authentication required: please log in as a venue owner.');
       return;
     }
+    const finalLat = parseFloat(newVenueData.latitude) || 13.0827;
+    const finalLng = parseFloat(newVenueData.longitude) || 80.2707;
     const dbRes = await apiCreateVenue({
       owner_id: currentOwnerId,
       owner_uid: user?.firebase_uid || user?.uid || '',
@@ -1393,8 +1456,10 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
       sports: newVenueData.sports || [newVenueData.sports?.[0] || 'Football'],
       address: sanitizeLocationToEnglish(newVenueData.location),
       location: sanitizeLocationToEnglish(newVenueData.location),
-      lat: newVenueData.latitude,
-      lng: newVenueData.longitude,
+      lat: finalLat,
+      lng: finalLng,
+      latitude: finalLat,
+      longitude: finalLng,
       city: user?.city || 'Chennai',
       price_per_hr: newVenueData.pricePerHour,
       image: newVenueData.image
@@ -1467,6 +1532,15 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
             >
               Back to Player Home
             </button>
+            {typeof onOpenProfileSwitcher === 'function' && (
+              <button
+                type="button"
+                onClick={onOpenProfileSwitcher}
+                className="w-full py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 text-xs font-bold uppercase tracking-widest transition-all cursor-pointer"
+              >
+                Switch Account / Profile
+              </button>
+            )}
           </div>
         </motion.div>
       </div>

@@ -357,9 +357,33 @@ export default function Discovery({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
   });
 
-  // Location Access State
-  const [locationStatus, setLocationStatus] = useState('prompt'); // 'prompt', 'detecting', 'granted'
-  const [userCoordinates, setUserCoordinates] = useState(null);
+  // Location Access State - Read cached device coordinates if available
+  const [locationStatus, setLocationStatus] = useState(() => {
+    try {
+      const saved = localStorage.getItem('turfington_last_known_gps');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.lat && parsed?.lng) return 'granted';
+      }
+    } catch {}
+    return 'prompt';
+  });
+  const [userCoordinates, setUserCoordinates] = useState(() => {
+    try {
+      const saved = localStorage.getItem('turfington_last_known_gps');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.lat && parsed?.lng) {
+          const lat = parseFloat(parsed.lat);
+          const lng = parseFloat(parsed.lng);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            return { lat, lng };
+          }
+        }
+      }
+    } catch {}
+    return null;
+  });
 
   // Prepaid Payment Dialog State
   const [activePrepaidVenue, setActivePrepaidVenue] = useState(null); // Venue details for payment
@@ -474,10 +498,32 @@ export default function Discovery({
     const listToMap = sourceActivities || rawActivities;
     setActivities(
       listToMap
-        .map(a => ({ ...a, distance: `${haversine(lat, lng, a.lat, a.lng)} km` }))
-        .sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance))
+        .map(a => {
+          const d = haversine(lat, lng, a.lat, a.lng);
+          return {
+            ...a,
+            distanceNum: d,
+            distance: d < 0.2 ? 'Nearby (< 200m)' : `${d} km`
+          };
+        })
+        .sort((a, b) => (a.distanceNum ?? 0) - (b.distanceNum ?? 0))
     );
   }, [rawActivities]);
+
+  // Real-time synchronization when GPS is updated anywhere across profiles or tabs
+  useEffect(() => {
+    const handleGpsUpdate = (e) => {
+      if (e.detail?.lat && e.detail?.lng) {
+        const lat = parseFloat(e.detail.lat);
+        const lng = parseFloat(e.detail.lng);
+        setUserCoordinates({ lat, lng });
+        setLocationStatus('granted');
+        applyRealDistances(lat, lng);
+      }
+    };
+    window.addEventListener('turfington_gps_updated', handleGpsUpdate);
+    return () => window.removeEventListener('turfington_gps_updated', handleGpsUpdate);
+  }, [applyRealDistances]);
 
   // Effect to recalculate distances if rawActivities changes and we have location
   useEffect(() => {
@@ -555,30 +601,47 @@ export default function Discovery({
     }
     setLocationStatus('detecting');
     setLocationError('');
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        setUserCoordinates({ lat: latitude, lng: longitude });
-        applyRealDistances(latitude, longitude);
-        // Strict English reverse geocode via Nominatim
-        try {
-          const geo = await fetchEnglishReverseGeocode(latitude, longitude, 10);
-          setLocationCity(geo.city || 'Chennai');
-        } catch {
-          setLocationCity('Chennai'); // fail gracefully in English
-        }
-        setLocationStatus('granted');
-      },
-      (err) => {
-        setLocationStatus('prompt');
-        setLocationError(
-          err.code === 1 ? 'Location permission denied. Please allow access in browser settings.'
-          : err.code === 2 ? 'Unable to determine location. Check your GPS signal.'
-          : 'Location request timed out. Try again.'
-        );
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
-    );
+
+    const onPosSuccess = async (position) => {
+      const latitude = parseFloat(position.coords.latitude.toFixed(6));
+      const longitude = parseFloat(position.coords.longitude.toFixed(6));
+      setUserCoordinates({ lat: latitude, lng: longitude });
+      try {
+        localStorage.setItem('turfington_last_known_gps', JSON.stringify({ lat: latitude, lng: longitude, timestamp: Date.now() }));
+        window.dispatchEvent(new CustomEvent('turfington_gps_updated', { detail: { lat: latitude, lng: longitude } }));
+      } catch {}
+      applyRealDistances(latitude, longitude);
+      // Strict English reverse geocode via Nominatim
+      try {
+        const geo = await fetchEnglishReverseGeocode(latitude, longitude, 10);
+        setLocationCity(geo.city || 'Chennai');
+      } catch {
+        setLocationCity('Chennai'); // fail gracefully in English
+      }
+      setLocationStatus('granted');
+    };
+
+    const onPosError = (err) => {
+      console.warn('High-accuracy GPS failed, falling back to standard accuracy...', err);
+      navigator.geolocation.getCurrentPosition(
+        onPosSuccess,
+        (err2) => {
+          setLocationStatus('prompt');
+          setLocationError(
+            err2.code === 1 ? 'Location permission denied. Please allow access in browser settings.'
+            : err2.code === 2 ? 'Unable to determine location. Check your GPS signal.'
+            : 'Location request timed out. Try again.'
+          );
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+      );
+    };
+
+    navigator.geolocation.getCurrentPosition(onPosSuccess, onPosError, {
+      enableHighAccuracy: true,
+      timeout: 8000,
+      maximumAge: 0
+    });
   };
 
   // Auto-request on mount
@@ -1061,7 +1124,8 @@ export default function Discovery({
               const nearbyList = activities
                 .map(turf => {
                   const distNum = haversine(userLat, userLng, turf.lat || 13.0827, turf.lng || 80.2707);
-                  return { ...turf, distanceNum: distNum, distanceText: `${distNum} km away` };
+                  const distanceText = distNum < 0.2 ? 'Nearby (< 200m)' : `${distNum} km away`;
+                  return { ...turf, distanceNum: distNum, distanceText };
                 })
                 .filter(turf => {
                   if (selectedSport !== 'All') {

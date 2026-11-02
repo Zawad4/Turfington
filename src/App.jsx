@@ -510,6 +510,7 @@ export default function App() {
                 user={user}
                 venueOffers={venueOffers}
                 setVenueOffers={setVenueOffers}
+                onOpenProfileSwitcher={() => setShowProfileSwitcher(true)}
                 onBackToPlayer={() => {
                   setNavHistory((prev) => (prev[prev.length - 1] === 'landing' ? prev : [...prev, 'landing']));
                   setActiveTab('landing');
