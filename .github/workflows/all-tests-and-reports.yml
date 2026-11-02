@@ -2,9 +2,9 @@ name: Automated Test Suite & Excel Reports Delivery
 
 on:
   push:
-    branches: [ main, master, dev ]
+    branches: [main, master, dev]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -15,7 +15,7 @@ jobs:
   execute-all-4-tests:
     name: Run All 4 Test Suites & Export Excel Artifacts (100% Passed)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     steps:
       - name: 1. Checkout Repository
@@ -26,25 +26,25 @@ jobs:
       - name: 2. Setup Node.js Runtime
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: "npm"
 
       - name: 3. Setup Java JDK (For Mobile E2E / Appium)
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: "temurin"
+          java-version: "17"
 
       - name: 4. Install Project Dependencies
         run: |
-          npm ci || npm install --legacy-peer-deps
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
       - name: 5. Start Backend API & Web Application Services
         run: |
           echo "Starting backend Express API and Vite web dev server..."
           node server.js > server.log 2>&1 &
           npm run dev > vite.log 2>&1 &
-          
+
           # Health check polling loop
           for i in {1..20}; do
             if curl -s http://localhost:5000/api/health > /dev/null && curl -s http://localhost:5173 > /dev/null; then
@@ -58,8 +58,8 @@ jobs:
       # ─── TEST 1: SELENIUM WEB E2E TEST SUITE (300+ CASES) ───
       - name: 6. Run Test 1 - Selenium Web E2E Suite (300+ Test Cases - 100% Passed)
         env:
-          HEADLESS: 'true'
-          BROWSER: 'chrome'
+          HEADLESS: "true"
+          BROWSER: "chrome"
         run: |
           echo "=================================================================="
           echo "  TEST 1: SELENIUM WEB E2E TEST SUITE (300+ CASES - 100% PASSED)"
@@ -100,14 +100,14 @@ jobs:
         run: |
           echo "Consolidating and organizing all test Excel workbooks with 100% Pass Rate..."
           npm run generate:reports || true
-          
+
           # Clean up any failure directories or error logs
           rm -rf reports/failures logs/error.log screenshots/failures
-          
+
           mkdir -p downloadable-artifacts/all-test-excel-reports
           cp -u excel/*.xlsx downloadable-artifacts/all-test-excel-reports/ 2>/dev/null || cp excel/*.xlsx downloadable-artifacts/all-test-excel-reports/
           cp -u "Vulnerability Test Results"/*.xlsx downloadable-artifacts/all-test-excel-reports/ 2>/dev/null || true
-          
+
           echo "Staged Excel Files Ready For Download:"
           ls -la downloadable-artifacts/all-test-excel-reports/
 

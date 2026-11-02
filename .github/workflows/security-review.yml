@@ -69,13 +69,13 @@ jobs:
         if: steps.detect-tech.outputs.runtime == 'nodejs'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Application Dependencies
         if: steps.detect-tech.outputs.runtime == 'nodejs'
         run: |
-          npm ci || npm install --legacy-peer-deps
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
       # ─── PHASE 3: STATIC APPLICATION SECURITY TESTING (SAST) ───
       - name: Run Gitleaks Secret Detection

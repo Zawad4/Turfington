@@ -1205,7 +1205,11 @@ export default function Discovery({
                   if (radiusKm === 'All' || String(radiusKm) === 'All') return true;
                   return turf.distanceNum <= Number(radiusKm);
                 })
-                .sort((a, b) => (a.distanceNum || 0) - (b.distanceNum || 0));
+                .sort((a, b) => {
+                  const distA = typeof a.distanceNum === 'number' && !isNaN(a.distanceNum) ? a.distanceNum : 999999;
+                  const distB = typeof b.distanceNum === 'number' && !isNaN(b.distanceNum) ? b.distanceNum : 999999;
+                  return distA - distB;
+                });
 
               return (
                 <div className="space-y-8">

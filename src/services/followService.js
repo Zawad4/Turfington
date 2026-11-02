@@ -391,16 +391,28 @@ export async function getFollowersList(userInput) {
       if (seenFollowerKeys.has(dedupeKey)) return;
       seenFollowerKeys.add(dedupeKey);
 
+      let fName = f.followerName || f.follower_name || '';
+      let fAvatar = f.followerAvatar || f.follower_avatar || '';
+      let fHandle = f.followerHandle || f.follower_handle || '';
+
+      // Hydrate from known accounts cache if available
+      const knownAcc = findKnownAccount(fId) || findKnownAccount(fEmail);
+      if (knownAcc) {
+        fName = fName || knownAcc.full_name || knownAcc.name;
+        fAvatar = fAvatar || knownAcc.avatar || knownAcc.avatar_url;
+        fHandle = fHandle || knownAcc.player_id || knownAcc.handle;
+      }
+
       followers.push({
         id: fId,
         uid: f.followerUid || f.follower_uid || fId,
         email: fEmail,
-        name: f.followerName || f.follower_name || 'Sports Athlete',
-        full_name: f.followerName || f.follower_name || 'Sports Athlete',
-        avatar: f.followerAvatar || f.follower_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${fId}`,
-        avatar_url: f.followerAvatar || f.follower_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${fId}`,
-        player_id: f.followerHandle || f.follower_handle || (fId ? `@athlete_${String(fId).slice(-4)}` : '@athlete'),
-        handle: f.followerHandle || f.follower_handle || (fId ? `@athlete_${String(fId).slice(-4)}` : '@athlete'),
+        name: fName || 'Sports Athlete',
+        full_name: fName || 'Sports Athlete',
+        avatar: fAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${fId}`,
+        avatar_url: fAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${fId}`,
+        player_id: fHandle || (fId ? `@athlete_${String(fId).slice(-4)}` : '@athlete'),
+        handle: fHandle || (fId ? `@athlete_${String(fId).slice(-4)}` : '@athlete'),
         role: f.followerRole || f.follower_role || 'player',
         created_at: f.createdAt
       });
@@ -460,22 +472,56 @@ export async function getFollowCounts(userInput) {
   let followingCount = getLocalFollowing(me.id).length;
 
   try {
-    // 1. Sync from Firestore
+    // 1. Sync directly from Firestore follows collection
     const snap = await getDocs(collection(db, 'follows'));
     if (!snap.empty) {
-      let fsFollowers = 0;
-      let fsFollowing = 0;
+      const followerSet = new Set();
+      const followingSet = new Set();
+      const allFollows = [];
+
       snap.docs.forEach(d => {
         const data = d.data();
-        const fKeys = (data.follower_keys || [data.follower_id, data.follower_uid, data.follower_email]).filter(Boolean).map(s => String(s).toLowerCase().trim());
-        const tKeys = (data.following_keys || [data.following_id, data.following_uid, data.following_email]).filter(Boolean).map(s => String(s).toLowerCase().trim());
-        if (me.allKeys.some(k => tKeys.includes(k))) fsFollowers++;
-        if (me.allKeys.some(k => fKeys.includes(k))) fsFollowing++;
+        const docKey = d.id;
+        const fId = data.follower_id || data.followerId || data.follower_uid || '';
+        const tId = data.following_id || data.followingId || data.following_uid || '';
+        const fKeys = (data.follower_keys || [fId, data.follower_uid, data.follower_email]).filter(Boolean).map(s => String(s).toLowerCase().trim());
+        const tKeys = (data.following_keys || [tId, data.following_uid, data.following_email]).filter(Boolean).map(s => String(s).toLowerCase().trim());
+
+        allFollows.push({
+          id: docKey,
+          docId: docKey,
+          followerId: fId,
+          followerUid: data.follower_uid || fId,
+          followerEmail: data.follower_email || '',
+          followerName: data.follower_name || 'Athlete',
+          followerAvatar: data.follower_avatar || '',
+          followerHandle: data.follower_handle || '',
+          followerKeys: fKeys,
+          followingId: tId,
+          followingUid: data.following_uid || tId,
+          followingEmail: data.following_email || '',
+          followingName: data.following_name || 'Athlete',
+          followingAvatar: data.following_avatar || '',
+          followingHandle: data.following_handle || '',
+          followingKeys: tKeys,
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (data.created_at || new Date().toISOString())
+        });
+
+        if (me.allKeys.some(k => tKeys.includes(k))) {
+          followerSet.add((fId || fKeys[0] || 'f').toLowerCase());
+        }
+        if (me.allKeys.some(k => fKeys.includes(k))) {
+          followingSet.add((tId || tKeys[0] || 't').toLowerCase());
+        }
       });
-      followersCount = Math.max(followersCount, fsFollowers);
-      followingCount = Math.max(followingCount, fsFollowing);
+
+      saveAllStoredFollows(allFollows);
+      followersCount = followerSet.size;
+      followingCount = followingSet.size;
     }
-  } catch {}
+  } catch (err) {
+    console.warn('getFollowCounts Firestore sync notice:', err);
+  }
 
   // 2. Query Backend API
   try {

@@ -20,68 +20,7 @@ export default function Home({
 }) {
   const { toast } = useToast();
   // Static lists representing items that can be joined
-  const [sessions, setSessions] = useState([
-    {
-      id: 101,
-      title: 'Football Tonight',
-      sport: 'Football',
-      image: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=600',
-      distance: '1.2 km away',
-      time: 'Today, 8:00 PM',
-      playersJoined: 9,
-      playersTotal: 14,
-      skillLevel: 'Intermediate',
-      isLive: true
-    },
-    {
-      id: 102,
-      title: 'Badminton Doubles Club',
-      sport: 'Badminton',
-      image: '/badminton_morning_doubles.jpg',
-      distance: '2.5 km away',
-      time: 'Tomorrow, 6:30 PM',
-      playersJoined: 3,
-      playersTotal: 4,
-      skillLevel: 'Advanced',
-      isLive: false
-    },
-    {
-      id: 103,
-      title: 'Bowling Party Night',
-      sport: 'Bowling',
-      image: '/bowling.jpg',
-      distance: '3.1 km away',
-      time: 'Fri, 9:00 PM',
-      playersJoined: 6,
-      playersTotal: 12,
-      skillLevel: 'Beginner Friendly',
-      isLive: true
-    },
-    {
-      id: 104,
-      title: 'TT Professional Practice',
-      sport: 'Table Tennis',
-      image: 'https://images.unsplash.com/photo-1611251135345-18c56206b863?q=80&w=600',
-      distance: '0.8 km away',
-      time: 'Today, 7:00 PM',
-      playersJoined: 1,
-      playersTotal: 2,
-      skillLevel: 'Advanced',
-      isLive: false
-    },
-    {
-      id: 105,
-      title: 'Box Cricket T10 Match',
-      sport: 'Cricket',
-      image: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=600',
-      distance: '4.2 km away',
-      time: 'Sun, 7:00 AM',
-      playersJoined: 14,
-      playersTotal: 22,
-      skillLevel: 'Intermediate',
-      isLive: false
-    }
-  ]);
+  const [sessions, setSessions] = useState([]);
 
   // Load and sync open matches hosted across the app
   useEffect(() => {
@@ -139,38 +78,7 @@ export default function Home({
     }
   };
 
-  const [venues, setVenues] = useState([
-    {
-      id: 201,
-      name: 'VK Multi Sports Turf',
-      image: 'https://images.unsplash.com/photo-1565992441121-4367fe2034cf?q=80&w=800',
-      rating: 4.9,
-      distance: '1.4 km',
-      sports: ['Football', 'Basketball', 'Pickleball'],
-      slots: '4 slots left',
-      price: '₹600/hr'
-    },
-    {
-      id: 202,
-      name: 'Tlk turf for badminton',
-      image: '/badminton_morning_doubles.jpg',
-      rating: 4.8,
-      distance: '2.1 km',
-      sports: ['Badminton', 'Table Tennis'],
-      slots: '2 slots left',
-      price: '₹175/hr'
-    },
-    {
-      id: 203,
-      name: 'Bowling in vr mall',
-      image: '/bowling.jpg',
-      rating: 4.7,
-      distance: '3.5 km',
-      sports: ['Bowling', 'Pool', 'Foosball'],
-      slots: '8 slots left',
-      price: '₹375/lane/hr'
-    }
-  ]);
+  const [venues, setVenues] = useState([]);
 
   // Subscribe to real-time venue updates
   useEffect(() => {
@@ -424,7 +332,18 @@ export default function Home({
                 </div>
 
                 <div className="overflow-x-auto no-scrollbar flex space-x-6 pb-4">
-                  {sessions.map(s => {
+                  {sessions.length === 0 ? (
+                    <div className="w-full glass-card p-8 text-center border border-dashed border-white/10 rounded-2xl">
+                      <Users className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
+                      <p className="text-xs text-neutral-400 font-medium">No open join games currently hosted.</p>
+                      <button
+                        onClick={() => setTab('discovery')}
+                        className="mt-3 px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white text-[11px] font-bold border border-white/10 transition-colors cursor-pointer"
+                      >
+                        Host or Find Games
+                      </button>
+                    </div>
+                  ) : sessions.map(s => {
                     const req = matchRequests.find(r => r.matchId === s.id && (r.userId === (user?.id || 'usr_curr') || r.userId === 'usr_amit_patel'));
                     const reqStatus = req ? req.status : (joinedMatches.includes(s.id) ? 'approved' : 'none');
                     const joined = reqStatus === 'approved';
@@ -598,8 +517,20 @@ export default function Home({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {venues.map(v => (
+                {venues.length === 0 ? (
+                  <div className="glass-card p-8 text-center border border-dashed border-white/10 rounded-2xl">
+                    <MapPin className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
+                    <p className="text-xs text-neutral-400 font-medium">No turf venues registered yet.</p>
+                    <button
+                      onClick={() => setTab('discovery')}
+                      className="mt-3 px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white text-[11px] font-bold border border-white/10 transition-colors cursor-pointer"
+                    >
+                      Explore Discovery
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {venues.map(v => (
                     <div key={v.id} className="glass-card overflow-hidden group border border-white/5 hover:border-white/10 transition-all duration-300">
                       <div className="h-44 overflow-hidden relative">
                         <img 
@@ -645,10 +576,10 @@ export default function Home({
                             <button 
                               onClick={() => {
                                 const venueName = v.venue || v.name || 'Sports Venue';
-                                const ownerNameStr = v.ownerName || v.owner_name || `${venueName} Host`;
+                                const ownerNameStr = v.ownerName || v.owner_name || `${venueName} Management`;
                                 const ownerId = v.owner_id || v.ownerId || v.owner_uid || `owner_${venueName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-                                const priceStr = v.price || (v.price_per_hr ? `₹${v.price_per_hr}/hr` : '');
-                                const initialMsg = `Hi ${ownerNameStr}! I am reaching out to discuss and have queries about booking slots at ${venueName}${priceStr ? ` (${priceStr})` : ''}.`;
+                                const priceStr = v.price || (v.price_per_hr ? `₹${v.price_per_hr}/hr` : 'Venue Slot');
+                                const initialMsg = `Hi! I have some questions regarding bookings for ${venueName}.`;
 
                                 const ownerTarget = {
                                   id: ownerId,
@@ -700,7 +631,8 @@ export default function Home({
                       </div>
                     </div>
                   ))}
-                </div>
+                  </div>
+                )}
               </div>
             </>
           )}

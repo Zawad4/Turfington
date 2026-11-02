@@ -184,9 +184,22 @@ export default function App() {
   }, [user?.id]);
 
   /* ── Booking Synchronization Events ────────────────────────── */
+  // Reload bookings whenever user switches or logs in
+  useEffect(() => {
+    const currentUid = user?.id || user?.uid || user?.firebase_uid;
+    if (currentUid) {
+      apiFetchBookings(user).then((userBks) => {
+        const strictlyUserBookings = (userBks || []).filter(b => isUserBookingStrict(b, user));
+        setBookings(strictlyUserBookings);
+      });
+    } else {
+      setBookings([]);
+    }
+  }, [user?.id, user?.uid, user?.firebase_uid, user?.email]);
+
   useEffect(() => {
     const handleCreated = (e) => {
-      if (e.detail) {
+      if (e.detail && isUserBookingStrict(e.detail, user)) {
         setBookings((prev) => [e.detail, ...(prev || []).filter((b) => b.id !== e.detail.id)]);
       }
     };

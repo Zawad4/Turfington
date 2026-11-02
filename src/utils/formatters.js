@@ -179,3 +179,32 @@ export function calculateCompletedMatches(bookings, now = new Date()) {
   return bookings.filter(b => isSlotMatchCompleted(b, now)).length;
 }
 
+
+
+/**
+ * Strictly checks whether a booking belongs to a given user.
+ * Matches across user id, uid, firebase_uid, and email.
+ */
+export function isUserBookingStrict(booking, user) {
+  if (!booking || !user) return false;
+  const userKeys = [user.id, user.uid, user.firebase_uid, user.email]
+    .filter(Boolean)
+    .map(k => String(k).toLowerCase().trim());
+  if (userKeys.length === 0) return false;
+
+  const bookingKeys = [
+    booking.user_id,
+    booking.userId,
+    booking.userUid,
+    booking.user_uid,
+    booking.user_email,
+    booking.userEmail,
+    booking.email,
+    booking.player_id,
+    booking.playerId
+  ]
+    .filter(Boolean)
+    .map(k => String(k).toLowerCase().trim());
+
+  return userKeys.some(k => bookingKeys.includes(k));
+}

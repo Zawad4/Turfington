@@ -31,7 +31,7 @@ import {
 import { apiUpdateProfile, apiFetchPlayerReviews, getRatingColor } from '../services/db';
 import { getFollowCounts, getLocalFollowing, getLocalFollowers, getFollowersList, getFollowingList, toggleFollowUser, isUserFollowing, subscribeToFollows } from '../services/followService';
 import FollowersListModal from '../components/FollowersListModal';
-import { calculateCompletedMatches } from '../utils/formatters';
+import { calculateCompletedMatches, isUserBookingStrict } from '../utils/formatters';
 import { useToast } from '../context';
 import { auth } from '../services/firebase';
 import UserAvatar from '../components/UserAvatar';
@@ -216,20 +216,29 @@ function PfpCropModal({ imageSrc, onClose, onConfirm }) {
   );
 }
 
-function loadUserBookings(userId) {
+function loadUserBookings(userOrId) {
+  if (!userOrId) return [];
+  const userObj = typeof userOrId === 'object' ? userOrId : { id: userOrId, uid: userOrId };
   try {
-    const sU = userId ? localStorage.getItem(`turfington_user_bookings_${userId}`) : null;
+    const uid = userObj.id || userObj.uid || userObj.firebase_uid;
+    const sU = uid ? localStorage.getItem(`turfington_user_bookings_${uid}`) : null;
+    let list = [];
     if (sU) {
       const parsed = JSON.parse(sU);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) list.push(...parsed);
     }
     const s1 = localStorage.getItem('turfington_user_bookings');
     if (s1) {
       const parsed = JSON.parse(s1);
       if (Array.isArray(parsed)) {
-        return userId ? parsed.filter(b => b.user_id === userId || b.userId === userId) : parsed;
+        list.push(...parsed.filter(b => isUserBookingStrict(b, userObj)));
       }
     }
+    const map = new Map();
+    list.forEach(b => {
+      if (b && b.id && isUserBookingStrict(b, userObj)) map.set(String(b.id), b);
+    });
+    return Array.from(map.values());
   } catch {}
   return [];
 }
@@ -330,15 +339,15 @@ export default function Profile({
   // Only completed slots (where slot end time has passed) count towards Matches (+1).
   // Cancelled or rejected slots are excluded (-1).
   const [completedMatchesCount, setCompletedMatchesCount] = useState(() => {
-    const local = loadUserBookings(currentUserId);
-    const initialBookings = (bookings && bookings.length > 0) ? bookings : local;
+    const local = loadUserBookings(user || currentUserId);
+    const initialBookings = ((bookings && bookings.length > 0) ? bookings : local).filter(b => isUserBookingStrict(b, user));
     return calculateCompletedMatches(initialBookings);
   });
 
   useEffect(() => {
     const updateMatches = () => {
-      const local = loadUserBookings(currentUserId);
-      const allBookings = (bookings && bookings.length > 0) ? bookings : local;
+      const local = loadUserBookings(user || currentUserId);
+      const allBookings = ((bookings && bookings.length > 0) ? bookings : local).filter(b => isUserBookingStrict(b, user));
       setCompletedMatchesCount(calculateCompletedMatches(allBookings));
     };
 

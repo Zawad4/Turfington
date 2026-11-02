@@ -19,7 +19,7 @@ jobs:
       - name: 2. Setup Node.js Runtime
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: 3. Setup Java JDK for Appium Mobile Automation
@@ -30,13 +30,22 @@ jobs:
 
       - name: 4. Install Dependencies
         run: |
-          npm ci || npm install
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
       - name: 5. Start Web Server & Backend API
         run: |
-          npm run dev &
-          node server.js &
-          sleep 5
+          node server.js > server.log 2>&1 &
+          npm run dev > vite.log 2>&1 &
+          
+          # Health check polling loop
+          for i in $(seq 1 20); do
+            if curl -s http://localhost:5173 > /dev/null && curl -s http://localhost:5000/api/health > /dev/null; then
+              echo "✅ Both Backend API and Frontend Server are ready!"
+              break
+            fi
+            echo "Waiting for services to spin up ($i/20)..."
+            sleep 2
+          done
 
       - name: 6. Run Selenium Web E2E Tests
         env:
@@ -58,10 +67,12 @@ jobs:
           npm run test:load || true
 
       - name: 10. Generate Excel Summary & Mochawesome HTML Reports
+        if: always()
         run: |
           npm run generate:reports || true
 
       - name: 11. Upload Excel Reports Artifact (For Submission)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Excel-E2E-Reports-Collection
@@ -74,6 +85,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: 12. Upload HTML Reports & Failure Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Mochawesome-HTML-Reports-And-Logs
@@ -81,3 +93,5 @@ jobs:
             reports/
             screenshots/
             logs/
+          retention-days: 30
+          if-no-files-found: ignore

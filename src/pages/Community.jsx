@@ -199,7 +199,8 @@ export default function Community({ user, setTab }) {
   const handleToggleFriend = async (e, athleteId) => {
     if (e && e.stopPropagation) e.stopPropagation();
     if (!currentUserId || !athleteId) return;
-    await toggleFollowUser(currentUserId, athleteId);
+    const targetAthlete = athletes.find(a => a.id === athleteId || a.uid === athleteId) || athleteId;
+    await toggleFollowUser(user || currentUserId, targetAthlete);
     setFollowedAthletes(getLocalFollowing(currentUserId));
   };
 

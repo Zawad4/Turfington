@@ -12,6 +12,8 @@ node_modules
 dist
 dist-ssr
 *.local
+mochawesome-report/
+reports/
 
 # Environment variables, credentials & secrets (CRITICAL FOR GITHUB SECURITY)
 .env

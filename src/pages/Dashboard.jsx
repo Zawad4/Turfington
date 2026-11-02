@@ -13,7 +13,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 import { apiFetchBookings, apiFetchOwnerBookings, apiFetchVenues, apiCreateDirectChat, apiFetchMessages, apiSendMessage, apiUpdateBookingStatus } from '../services/db';
-import { formatTime12Hour } from '../utils/formatters';
+import { formatTime12Hour, isUserBookingStrict } from '../utils/formatters';
 
 /* ════════════════════════════════════════════════════════════
    PLAYER DASHBOARD
@@ -407,12 +407,7 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
       if (sU) localU = JSON.parse(sU);
     } catch {}
 
-    const isUserBooking = (b) => {
-      if (!b) return false;
-      const bUid = b.user_id || b.userId;
-      if (!bUid) return false;
-      return bUid === currentUserId || (user?.firebase_uid && bUid === user.firebase_uid) || (user?.id && bUid === user.id);
-    };
+    const isUserBooking = (b) => isUserBookingStrict(b, user);
 
     let local1 = [];
     try {
@@ -427,7 +422,7 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
     const combined = [...(dbBookings || []), ...localU, ...local1, ...appUserBookings];
     const map = new Map();
     combined.forEach(b => {
-      if (b && b.id) {
+      if (b && b.id && isUserBookingStrict(b, user)) {
         const item = formatBookingItem(b);
         if (item) map.set(String(b.id), item);
       }
@@ -459,8 +454,8 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
   const totalFines = cancelled.reduce((s, b) => s + (b.fine || 0), 0);
 
   const validSessions = useMemo(() => {
-    return bookings.filter(b => b && b.status !== 'cancelled' && b.status !== 'rejected');
-  }, [bookings]);
+    return bookings.filter(b => b && b.status !== 'cancelled' && b.status !== 'rejected' && isUserBookingStrict(b, user));
+  }, [bookings, user]);
 
   const playerWeeklyActivity = useMemo(() => {
     const dayMap = {
