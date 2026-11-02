@@ -35,32 +35,37 @@ export default function MobileNav({
       ];
 
   return (
-    <nav className="xl:hidden fixed bottom-6 left-3 right-3 z-40 flex items-center justify-around py-3 px-2 glass-card border border-white/10 shadow-2xl">
-      {tabs.map(({ id, Icon, label }) => (
-        <button
-          key={id}
-          onClick={() => onNavClick(id)}
-          className={`flex flex-col items-center space-y-1 transition-colors relative ${
-            activeTab === id
-              ? id === 'venue-manager'
-                ? 'text-violet-400'
-                : 'text-white'
-              : 'text-neutral-500'
-          }`}
-        >
-          <div className="relative">
-            <Icon className="w-5 h-5" />
+    <nav
+      aria-label="Mobile Navigation"
+      className="xl:hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md bg-[#0e0e12]/92 backdrop-blur-2xl border border-white/10 rounded-full py-2 px-3 shadow-[0_12px_40px_rgba(0,0,0,0.7)] flex items-center justify-between gap-1"
+    >
+      {tabs.map(({ id, Icon, label }) => {
+        const isActive = activeTab === id || (id === 'landing' && activeTab === 'home');
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onNavClick(id)}
+            title={label}
+            aria-label={label}
+            className={`relative p-2.5 sm:p-3 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${
+              isActive
+                ? id === 'venue-manager'
+                  ? 'bg-violet-600 text-white shadow-[0_0_16px_rgba(139,92,246,0.6)] scale-105'
+                  : 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.6)] scale-105'
+                : 'text-neutral-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Icon className="w-5 h-5 transition-transform" />
             {id === 'community' && unreadMessageCount > 0 && (
-              <span className="absolute -top-1 -right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse border border-[#080808]" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 animate-pulse border-2 border-[#0e0e12]" />
             )}
             {id === 'marketplace' && cartCount > 0 && (
-              <span className="absolute -top-1 -right-1.5 w-2.5 h-2.5 rounded-full bg-indigo-500 border border-[#080808]" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-400 border-2 border-[#0e0e12]" />
             )}
-          </div>
-          <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
-        </button>
-      ))}
+          </button>
+        );
+      })}
     </nav>
   );
 }
-
