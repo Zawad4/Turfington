@@ -318,65 +318,216 @@ export function calculateAndUpdateDailyStreak(user) {
   return user;
 }
 
-export async function apiFetchUserSavedProfiles(ownerEmailOrUid) {
-  if (!ownerEmailOrUid) return [];
+export const CONNECTED_ACCOUNTS_KEY = 'turfington_connected_accounts';
+
+/**
+ * Returns all interconnected accounts stored on this browser/client.
+ * Scans unified storage, legacy keys, active user, and merges them deduplicated.
+ */
+export function getInterconnectedAccounts() {
+  const map = new Map();
+
+  // 1. Read master unified accounts list
+  try {
+    const raw = localStorage.getItem(CONNECTED_ACCOUNTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(p => {
+          if (!p) return;
+          const k = String(p.email || p.id || p.firebase_uid || '').trim().toLowerCase();
+          if (k) map.set(k, p);
+        });
+      }
+    }
+  } catch {}
+
+  // 2. Scan any legacy turfington_saved_profiles_* keys and merge them
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('turfington_saved_profiles') || key === 'turfington_all_profiles' || key === 'turfington_profiles')) {
+        try {
+          const val = JSON.parse(localStorage.getItem(key));
+          if (Array.isArray(val)) {
+            val.forEach(p => {
+              if (!p) return;
+              const k = String(p.email || p.id || p.firebase_uid || '').trim().toLowerCase();
+              if (k && !map.has(k)) map.set(k, p);
+            });
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // 3. Include currently active user if stored
+  try {
+    const rawUser = localStorage.getItem('turfington_user');
+    if (rawUser) {
+      const cur = JSON.parse(rawUser);
+      if (cur) {
+        const k = String(cur.email || cur.id || cur.firebase_uid || '').trim().toLowerCase();
+        if (k) {
+          map.set(k, { ...(map.get(k) || {}), ...cur });
+        }
+      }
+    }
+  } catch {}
+
+  return Array.from(map.values());
+}
+
+/**
+ * Saves or updates an account in the interconnected accounts store.
+ * Synchronizes across master key and all legacy user keys so every account sees all other accounts.
+ */
+export function saveInterconnectedAccount(profileData) {
+  if (!profileData) return getInterconnectedAccounts();
+  const existing = getInterconnectedAccounts();
+  const k = String(profileData.email || profileData.id || profileData.firebase_uid || '').trim().toLowerCase();
+  if (!k) return existing;
+
+  const sanitized = {
+    ...profileData,
+    id: profileData.id || profileData.firebase_uid || ('usr_' + Date.now()),
+    firebase_uid: profileData.firebase_uid || profileData.id || '',
+    full_name: profileData.full_name || profileData.name || 'Member',
+    email: profileData.email || '',
+    role: profileData.role || 'player',
+    is_profile_complete: true,
+    updated_at: new Date().toISOString()
+  };
+
+  const map = new Map();
+  // Put updated profile first
+  map.set(k, sanitized);
+  existing.forEach(p => {
+    const pk = String(p.email || p.id || p.firebase_uid || '').trim().toLowerCase();
+    if (pk && pk !== k) {
+      map.set(pk, p);
+    }
+  });
+
+  const updatedList = Array.from(map.values());
 
   try {
-    const q1 = query(collection(db, 'profiles'), where('owner_email', '==', ownerEmailOrUid));
-    const snap1 = await getDocs(q1);
-    const profiles = snap1.docs.map(d => ({ id: d.id, ...d.data() }));
+    // 1. Save to master unified interconnected accounts key
+    localStorage.setItem(CONNECTED_ACCOUNTS_KEY, JSON.stringify(updatedList));
 
-    if (profiles.length > 0) return profiles;
+    // 2. Also broadcast/mirror to all connected accounts' individual keys
+    updatedList.forEach(p => {
+      if (p.email) {
+        localStorage.setItem('turfington_saved_profiles_' + p.email, JSON.stringify(updatedList));
+      }
+      if (p.id) {
+        localStorage.setItem('turfington_saved_profiles_' + p.id, JSON.stringify(updatedList));
+      }
+    });
+  } catch {}
 
-    const q2 = query(collection(db, 'profiles'), where('email', '==', ownerEmailOrUid));
-    const snap2 = await getDocs(q2);
-    const profiles2 = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (profiles2.length > 0) return profiles2;
-  } catch (err) {
-    console.warn('apiFetchUserSavedProfiles Firestore error:', err);
+  // 3. Real-time window event dispatch for profile switcher
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_accounts_updated', { detail: updatedList }));
   }
 
+  return updatedList;
+}
+
+/**
+ * Removes an account from the interconnected accounts list
+ */
+export function removeInterconnectedAccount(profileIdOrEmail) {
+  if (!profileIdOrEmail) return getInterconnectedAccounts();
+  const target = String(profileIdOrEmail).trim().toLowerCase();
+  const existing = getInterconnectedAccounts();
+  const filtered = existing.filter(p => {
+    const id = String(p.id || '').trim().toLowerCase();
+    const email = String(p.email || '').trim().toLowerCase();
+    const uid = String(p.firebase_uid || '').trim().toLowerCase();
+    return id !== target && email !== target && uid !== target;
+  });
+
   try {
-    const key = 'turfington_saved_profiles_' + ownerEmailOrUid;
-    const s = localStorage.getItem(key);
-    if (s) return JSON.parse(s);
+    localStorage.setItem(CONNECTED_ACCOUNTS_KEY, JSON.stringify(filtered));
+    filtered.forEach(p => {
+      if (p.email) localStorage.setItem('turfington_saved_profiles_' + p.email, JSON.stringify(filtered));
+      if (p.id) localStorage.setItem('turfington_saved_profiles_' + p.id, JSON.stringify(filtered));
+    });
   } catch {}
-  return [];
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_accounts_updated', { detail: filtered }));
+  }
+
+  return filtered;
+}
+
+export async function apiFetchUserSavedProfiles(ownerEmailOrUid) {
+  // 1. Get all interconnected accounts from local storage (instant zero latency)
+  const localAccounts = getInterconnectedAccounts();
+  const map = new Map();
+  localAccounts.forEach(p => {
+    const k = String(p.email || p.id || p.firebase_uid || '').trim().toLowerCase();
+    if (k) map.set(k, p);
+  });
+
+  // 2. Query Firestore profiles if owner identifier is provided
+  try {
+    if (ownerEmailOrUid) {
+      const q1 = query(collection(db, 'profiles'), where('owner_email', '==', ownerEmailOrUid));
+      const snap1 = await getDocs(q1);
+      snap1.docs.forEach(d => {
+        const data = { id: d.id, ...d.data() };
+        const k = String(data.email || data.id || data.firebase_uid || '').trim().toLowerCase();
+        if (k && !map.has(k)) map.set(k, data);
+      });
+
+      const q2 = query(collection(db, 'profiles'), where('email', '==', ownerEmailOrUid));
+      const snap2 = await getDocs(q2);
+      snap2.docs.forEach(d => {
+        const data = { id: d.id, ...d.data() };
+        const k = String(data.email || data.id || data.firebase_uid || '').trim().toLowerCase();
+        if (k && !map.has(k)) map.set(k, data);
+      });
+    }
+  } catch (err) {
+    console.warn('apiFetchUserSavedProfiles Firestore notice:', err);
+  }
+
+  const unified = Array.from(map.values());
+  try {
+    localStorage.setItem(CONNECTED_ACCOUNTS_KEY, JSON.stringify(unified));
+  } catch {}
+
+  return unified;
 }
 
 export async function apiSaveSavedProfile(profileData, ownerEmailOrUid) {
+  if (!profileData) return null;
+
+  // Save to interconnected accounts store across all keys
+  saveInterconnectedAccount(profileData);
+
   const record = {
     ...profileData,
     owner_email: ownerEmailOrUid || profileData.email || profileData.firebase_uid,
     updated_at: new Date().toISOString()
   };
 
-  try {
-    const key = 'turfington_saved_profiles_' + (ownerEmailOrUid || 'default');
-    const s = localStorage.getItem(key);
-    const existing = s ? JSON.parse(s) : [];
-    const filtered = existing.filter(p => p.id !== record.id && p.email !== record.email);
-    const updated = [record, ...filtered];
-    localStorage.setItem(key, JSON.stringify(updated));
-  } catch {}
-
   const pId = record.id || ('prof_' + Date.now());
   setDoc(doc(db, 'profiles', pId), record, { merge: true }).catch(() => {});
+  fetch(`${API_BASE}/api/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(record)
+  }).catch(() => {});
 
   return record;
 }
 
 export async function apiDeleteUserSavedProfile(profileId, ownerEmailOrUid) {
-  try {
-    const key = 'turfington_saved_profiles_' + (ownerEmailOrUid || 'default');
-    const s = localStorage.getItem(key);
-    if (s) {
-      const existing = JSON.parse(s);
-      const filtered = existing.filter(p => p.id !== profileId && p.firebase_uid !== profileId && p.email !== profileId && p.username !== profileId);
-      localStorage.setItem(key, JSON.stringify(filtered));
-    }
-  } catch {}
-
+  removeInterconnectedAccount(profileId);
   deleteDoc(doc(db, 'profiles', profileId)).catch(() => {});
   deleteDoc(doc(db, 'users', profileId)).catch(() => {});
   fetch(`${API_BASE}/api/profiles/${encodeURIComponent(profileId)}`, { method: 'DELETE' }).catch(() => {});

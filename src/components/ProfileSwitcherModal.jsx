@@ -17,8 +17,11 @@ import {
   apiCreateProfile, 
   apiFetchProfile, 
   apiFetchProfileByEmail,
-  apiDeleteUserSavedProfile,
-  apiUpdateProfile
+  apiDeleteUserSavedProfile, 
+  apiUpdateProfile,
+  getInterconnectedAccounts,
+  saveInterconnectedAccount,
+  removeInterconnectedAccount
 } from '../services/db';
 import { ensureUserProfile } from '../services/chatService';
 import UserAvatar from './UserAvatar';
@@ -66,26 +69,56 @@ export default function ProfileSwitcherModal({
 
   // Load database-synced real profiles on mount or open
   useEffect(() => {
-    if (!isOpen || !activeUser) return;
+    if (!isOpen) return;
     async function loadDbProfiles() {
       setLoadingProfiles(true);
-      const ownerKey = activeUser.email || activeUser.id;
+      // Ensure activeUser is registered into interconnected accounts
+      if (activeUser) {
+        saveInterconnectedAccount(activeUser);
+      }
+
+      const ownerKey = activeUser?.email || activeUser?.id;
       const dbProfiles = await apiFetchUserSavedProfiles(ownerKey);
 
-      // Merge active user with DB profiles without duplicates
+      // Merge active user with all interconnected profiles without duplicates
       const map = new Map();
-      if (activeUser) map.set(activeUser.id || activeUser.email, activeUser);
-      dbProfiles.forEach(p => map.set(p.id || p.email, p));
+      if (activeUser) {
+        const ak = String(activeUser.email || activeUser.id || '').trim().toLowerCase();
+        if (ak) map.set(ak, activeUser);
+      }
+      dbProfiles.forEach(p => {
+        const pk = String(p.email || p.id || '').trim().toLowerCase();
+        if (pk) {
+          if (map.has(pk)) {
+            map.set(pk, { ...map.get(pk), ...p });
+          } else {
+            map.set(pk, p);
+          }
+        }
+      });
 
-      setProfiles(Array.from(map.values()));
+      const list = Array.from(map.values());
+      setProfiles(list);
       setLoadingProfiles(false);
     }
     loadDbProfiles();
+
+    const handleAccountsUpdated = (e) => {
+      if (e.detail && Array.isArray(e.detail)) {
+        setProfiles(e.detail);
+      }
+    };
+    window.addEventListener('turfington_accounts_updated', handleAccountsUpdated);
+    return () => window.removeEventListener('turfington_accounts_updated', handleAccountsUpdated);
   }, [isOpen, activeUser]);
 
   if (!isOpen) return null;
 
   const handleSwitch = (prof) => {
+    if (activeUser) {
+      saveInterconnectedAccount(activeUser);
+    }
+    saveInterconnectedAccount(prof);
     onClose();
     setTimeout(() => {
       onSelectProfile(prof);
@@ -95,9 +128,10 @@ export default function ProfileSwitcherModal({
   // Remove Account from Saved Profiles & Firebase DB
   const handleRemoveAccount = async (e, targetProf) => {
     e.stopPropagation();
-    if (confirm(`Remove account "${targetProf.full_name}" (${targetProf.email}) from saved profiles?`)) {
+    if (confirm(`Remove account "${targetProf.full_name || targetProf.email}" from saved profiles?`)) {
       const ownerKey = activeUser?.email || activeUser?.id;
       await apiDeleteUserSavedProfile(targetProf.id || targetProf.email, ownerKey);
+      removeInterconnectedAccount(targetProf.id || targetProf.email);
       setProfiles(prev => prev.filter(p => p.id !== targetProf.id && p.email !== targetProf.email));
     }
   };
@@ -135,11 +169,15 @@ export default function ProfileSwitcherModal({
         history: []
       };
 
+      if (activeUser) {
+        saveInterconnectedAccount(activeUser);
+      }
       await apiCreateProfile({ ...completedProfile, isNewRegistration: true });
       await apiSaveSavedProfile(completedProfile, activeUser?.email || activeUser?.id);
+      saveInterconnectedAccount(completedProfile);
 
-      const updated = [completedProfile, ...profiles.filter(p => p.id !== completedProfile.id)];
-      setProfiles(updated);
+      const allAccounts = getInterconnectedAccounts();
+      setProfiles(allAccounts);
       setAuthLoading(false);
       setOnboardingNewProfile(null);
       setShowAddForm(false);
@@ -193,9 +231,13 @@ export default function ProfileSwitcherModal({
             avatarUrl: completeProfile.avatar || completeProfile.avatar_url || result.user.photoURL
           }).catch(() => {});
 
+          if (activeUser) {
+            saveInterconnectedAccount(activeUser);
+          }
           await apiSaveSavedProfile(completeProfile, activeUser?.email || activeUser?.id);
-          const updated = [completeProfile, ...profiles.filter(p => p.id !== completeProfile.id)];
-          setProfiles(updated);
+          saveInterconnectedAccount(completeProfile);
+          const allAccounts = getInterconnectedAccounts();
+          setProfiles(allAccounts);
           setGoogleLoading(false);
           setShowAddForm(false);
           onSelectProfile(completeProfile);
@@ -319,9 +361,14 @@ export default function ProfileSwitcherModal({
         };
 
         apiUpdateProfile(finalProfile.id, { role: finalRole, is_profile_complete: true }).catch(() => {});
+        if (activeUser) {
+          saveInterconnectedAccount(activeUser);
+        }
+        apiUpdateProfile(finalProfile.id, { role: finalRole, is_profile_complete: true }).catch(() => {});
         await apiSaveSavedProfile(finalProfile, activeUser?.email || activeUser?.id);
-        const updated = [finalProfile, ...profiles.filter(p => p.id !== finalProfile.id)];
-        setProfiles(updated);
+        saveInterconnectedAccount(finalProfile);
+        const allAccounts = getInterconnectedAccounts();
+        setProfiles(allAccounts);
         setAuthLoading(false);
         setShowAddForm(false);
         onSelectProfile(finalProfile);
