@@ -957,29 +957,8 @@ export default function Profile({
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Account Summary */}
+          {/* RIGHT COLUMN: Peer Reputation */}
           <div className="space-y-8">
-            <div className="glass-card p-6 border border-white/5 space-y-4">
-              <h3 className="font-display font-extrabold text-sm uppercase tracking-wider pb-3 border-b border-white/5">
-                Account Summary
-              </h3>
-
-              <div className="space-y-3 text-xs">
-                <div className="flex justify-between items-center py-2 border-b border-white/5">
-                  <span className="text-neutral-400 font-light">Account Type:</span>
-                  <span className="font-bold text-white uppercase tracking-wider">{role === 'owner' ? 'Venue Owner' : 'Player'}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-white/5">
-                  <span className="text-neutral-400 font-light">Email Address:</span>
-                  <span className="font-bold text-neutral-300 truncate max-w-[160px]">{user?.email || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between items-center py-2 border-b border-white/5">
-                  <span className="text-neutral-400 font-light">Player ID:</span>
-                  <span className="font-bold text-indigo-400 font-mono text-xs">{editPlayerId || initialPlayerId}</span>
-                </div>
-              </div>
-            </div>
-
             {/* Peer Reviews Teaser Card on Overview */}
             <div className="glass-card p-6 border border-amber-500/20 bg-amber-500/[0.02] rounded-3xl space-y-3.5 text-left">
               <div className="flex items-center justify-between">
