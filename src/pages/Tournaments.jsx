@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+const { useState: _useState, useEffect: _useEffect, useMemo: _useMemo, useRef: _useRef, useCallback: _useCallback } = React;
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Trophy, Plus, Users, Calendar, IndianRupee, Clock, ChevronRight,
@@ -163,7 +164,7 @@ function TournamentRegistrationModal({ tournament, user, onClose, onSuccess }) {
     acceptRules: false,
   });
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (user) {
       const uName = user.full_name || user.name || user.displayName || (user.email ? user.email.split('@')[0] : '');
       const uPhone = user.phone || user.phoneNumber || '';

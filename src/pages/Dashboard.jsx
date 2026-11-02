@@ -1,5 +1,6 @@
 import UserAvatar from '../components/UserAvatar';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+const { useState: _useState, useEffect: _useEffect, useMemo: _useMemo, useRef: _useRef, useCallback: _useCallback } = React;
 import { motion } from 'framer-motion';
 import {
   Calendar, Clock, Users, Trophy, MapPin, CheckCircle,

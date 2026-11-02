@@ -16,7 +16,18 @@ export default class ErrorBoundary extends React.Component {
 
   handleReset = () => {
     this.setState({ hasError: false, error: null });
-    window.location.reload();
+    try {
+      if ('caches' in window) {
+        caches.keys().then(names => names.forEach(name => caches.delete(name)));
+      }
+    } catch (_) {}
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('_r', Date.now().toString());
+      window.location.href = url.toString();
+    } catch (_) {
+      window.location.reload();
+    }
   };
 
   render() {

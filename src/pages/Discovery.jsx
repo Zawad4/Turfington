@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+const { useState: _useState, useEffect: _useEffect, useCallback: _useCallback, useRef: _useRef, useMemo: _useMemo } = React;
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, MapPin, Gamepad2, SlidersHorizontal, Calendar,
@@ -1085,8 +1086,8 @@ export default function Discovery({
                     const titleMatch = (turf.title && turf.title.toLowerCase().includes(q)) ||
                                        (turf.venue && turf.venue.toLowerCase().includes(q)) ||
                                        (turf.name && turf.name.toLowerCase().includes(q));
-                    const sportMatch = (turf.sport && turf.sport.toLowerCase() === targetSport) ||
-                                       (turf.category && turf.category.toLowerCase() === targetSport) ||
+                    const sportMatch = (turf.sport && turf.sport.toLowerCase().includes(q)) ||
+                                       (turf.category && turf.category.toLowerCase().includes(q)) ||
                                        (Array.isArray(turf.sports) && turf.sports.some(s => s && s.toLowerCase() === q));
                     const addrMatch = (turf.address && turf.address.toLowerCase().includes(q)) ||
                                       (turf.location && turf.location.toLowerCase().includes(q));
