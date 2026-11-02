@@ -22,7 +22,7 @@ jobs:
       - name: 2. Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: 'npm'
 
       - name: 3. Install NPM Dependencies
