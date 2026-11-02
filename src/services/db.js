@@ -1,4 +1,5 @@
-import { db, auth, storage } from './firebase';
+import { sanitizeLocationToEnglish } from '../utils/locationHelper.js';
+import { db, auth, storage } from './firebase.js';
 import { 
   collection, 
   doc, 
@@ -982,22 +983,17 @@ export async function apiSearchUsers(queryStr, currentUserId = null) {
   const cleanQ = rawQ.replace(/^@/, '');
 
   const userMap = new Map();
+  const currentUidStr = typeof currentUserId === 'object' && currentUserId !== null ? (currentUserId.id || currentUserId.uid) : currentUserId;
 
   const addCandidate = (u) => {
     if (!u) return;
     const uid = u.id || u.firebase_uid || u.uid;
     if (!uid) return;
     if (NPC_TEST_USER_IDS.has(uid)) return; // Exclude test NPCs and bots completely!
-    if (currentUserId && (uid === currentUserId || u.firebase_uid === currentUserId)) return;
-
-    // Filter out venue owners: only real players/athletes should appear in athlete searches
-    const userRole = (u.role || u.userRole || u.user_role || '').toLowerCase().trim();
-    if (userRole === 'owner' || userRole === 'venue_owner' || userRole === 'turf_owner' || !!u.is_owner || !!u.venue_owner) {
-      return;
-    }
+    if (currentUidStr && (uid === currentUidStr || u.firebase_uid === currentUidStr)) return;
 
     const email = (u.email || '').toLowerCase().trim();
-    if (email === 'owner123@gmail.cpm' || email === 'owner123@gmail.com' || email.startsWith('owner')) return;
+    if (email === 'owner123@gmail.cpm' || email === 'owner123@gmail.com' || email.startsWith('owner123')) return;
 
     // Strict requirement: ONLY accounts created by Google or active users with valid email
     const isGoogle = !!(
@@ -1758,16 +1754,14 @@ export async function apiFetchAthletes(currentUserId) {
       const uid = userData.firebase_uid || userData.id || userData.uid;
       if (!uid) return;
       if (NPC_TEST_USER_IDS.has(uid)) return; // Exclude test NPCs completely!
-      if (currentUserId && (uid === currentUserId || userData.firebase_uid === currentUserId)) return;
-
-      // Filter out venue owners: only player profiles should show up under find athletes/chat
-      const userRole = (userData.role || userData.userRole || userData.user_role || '').toLowerCase().trim();
-      if (userRole === 'owner' || userRole === 'venue_owner' || userRole === 'turf_owner' || !!userData.is_owner || !!userData.venue_owner) {
-        return;
-      }
 
       const email = (userData.email || '').toLowerCase().trim();
-      if (email === 'owner123@gmail.cpm' || email === 'owner123@gmail.com' || email.startsWith('owner')) return;
+      // Exclude only the test mock owner123
+      if (email === 'owner123@gmail.cpm' || email === 'owner123@gmail.com' || email.startsWith('owner123')) return;
+
+      // Do not list current user as their own nearby athlete
+      const currentUidStr = typeof currentUserId === 'object' && currentUserId !== null ? (currentUserId.id || currentUserId.uid) : currentUserId;
+      if (currentUidStr && (uid === currentUidStr || userData.firebase_uid === currentUidStr)) return;
 
       const lookupKey = uid || email;
       if (!lookupKey) return;
@@ -1775,7 +1769,7 @@ export async function apiFetchAthletes(currentUserId) {
       const isGoogle = !!(
         userData.auth_provider === 'google' ||
         userData.is_google_user ||
-        (email && email.endsWith('@gmail.com')) ||
+        (email && (email.endsWith('@gmail.com') || email.includes('google'))) ||
         (userData.avatar && userData.avatar.includes('googleusercontent.com')) ||
         (userData.avatarUrl && userData.avatarUrl.includes('googleusercontent.com')) ||
         (userData.avatar_url && userData.avatar_url.includes('googleusercontent.com'))
@@ -1846,6 +1840,10 @@ export async function apiFetchAthletes(currentUserId) {
 
     // 4. Aggregate accounts saved in localStorage (from ProfileSwitcher & device auth)
     try {
+      if (typeof getInterconnectedAccounts === 'function') {
+        const connected = getInterconnectedAccounts();
+        if (Array.isArray(connected)) connected.forEach(acc => addOrUpdateUser(acc));
+      }
       if (typeof window !== 'undefined' && window.localStorage) {
         // Multi-accounts map
         const rawAccounts = localStorage.getItem('turfington_accounts');
@@ -1869,14 +1867,13 @@ export async function apiFetchAthletes(currentUserId) {
       }
     } catch {}
 
-    // NO NPC TEST USERS & NO OWNERS: Filter strictly to real registered athletes
+    // Real registered athletes and accounts connected to Google (excluding test NPCs and owner123)
+    const currentUidStr = typeof currentUserId === 'object' && currentUserId !== null ? (currentUserId.id || currentUserId.uid) : currentUserId;
     const finalUsers = Array.from(seenMap.values()).filter(u => {
-      const matchId = u.id === currentUserId || u.firebase_uid === currentUserId;
-      const userRole = (u.role || u.userRole || u.user_role || '').toLowerCase().trim();
-      const isOwner = userRole === 'owner' || userRole === 'venue_owner' || userRole === 'turf_owner' || !!u.is_owner || !!u.venue_owner;
+      const matchId = currentUidStr && (u.id === currentUidStr || u.firebase_uid === currentUidStr);
       const email = (u.email || '').toLowerCase().trim();
-      const isOwnerEmail = email === 'owner123@gmail.cpm' || email === 'owner123@gmail.com' || email.startsWith('owner');
-      return !matchId && !NPC_TEST_USER_IDS.has(u.id) && !isOwner && !isOwnerEmail;
+      const isMockOwner = email === 'owner123@gmail.cpm' || email === 'owner123@gmail.com' || email.startsWith('owner123');
+      return !matchId && !NPC_TEST_USER_IDS.has(u.id) && !isMockOwner;
     });
 
     // Prioritize Google-signed-in users first

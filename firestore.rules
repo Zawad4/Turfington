@@ -45,7 +45,7 @@ service cloud.firestore {
 
     // ── 1. User Profiles & Subcollections ──────────────────
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isOwner(userId);
 
       // Inbox subcollection: personal to user

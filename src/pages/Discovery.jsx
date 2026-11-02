@@ -537,16 +537,16 @@ export default function Discovery({
       
       let fetched = [];
       if (searchQuery.trim()) {
-        fetched = await apiSearchUsers(searchQuery, user?.id);
+        fetched = await apiSearchUsers(searchQuery, currentUserId);
       } else {
-        fetched = await apiFetchNearbyPlayers(lat, lng, radiusKm, user?.id);
+        fetched = await apiFetchNearbyPlayers(lat, lng, radiusKm, currentUserId);
       }
 
       setDbPlayersList(fetched);
       setPlayersLoading(false);
     }
     loadDbPlayers();
-  }, [userCoordinates, radiusKm, searchQuery, user?.id]);
+  }, [userCoordinates, radiusKm, searchQuery, currentUserId]);
 
   const filteredDbPlayers = useMemo(() => {
     let list = [...dbPlayersList];
