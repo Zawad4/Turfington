@@ -1732,75 +1732,31 @@ app.post('/api/reports', (req, res) => {
   res.json({ success: true, report: newReport });
 });
 
-// 13. Razorpay Payment Gateway Config, Order Creation & Signature Verification API
-const RAZORPAY_KEY_ID = process.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TWTmM3CwfnUSnT';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'F9TIsiGMzIYdvWlirFrdnumh';
-const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || RAZORPAY_KEY_SECRET;
-
+// 13. Direct Payment & Booking Endpoints (Razorpay integration completely removed)
 app.get('/api/payments/config', (req, res) => {
   res.json({
-    key: RAZORPAY_KEY_ID,
-    configured: true,
-    mode: RAZORPAY_KEY_ID.startsWith('rzp_test') ? 'test' : 'live'
+    key: '',
+    configured: false,
+    mode: 'direct'
   });
 });
 
-// 13a. Create Razorpay Order Endpoint
+// 13a. Create Direct Booking Order
 app.post('/api/payments/create-order', async (req, res) => {
   try {
     const { amount, currency = 'INR', venue_id, user_id, title } = req.body;
-
     const numAmount = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^\d.]/g, '')) || 1000;
-    const amountInPaise = Math.round(numAmount * 100);
+    const orderId = `ord_direct_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
-    if (amountInPaise < 100) {
-      return res.status(400).json({ success: false, error: 'Minimum payable amount is ₹1.00' });
-    }
-
-    const receipt = `rcpt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const authHeader = `Basic ${Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64')}`;
-
-    console.log(`[RAZORPAY ORDER CREATE] Requesting order for ₹${numAmount} (${amountInPaise} paise)...`);
-
-    const rzpResponse = await fetch('https://api.razorpay.com/v1/orders', {
-      method: 'POST',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        amount: amountInPaise,
-        currency,
-        receipt,
-        notes: {
-          venue_id: venue_id || 'v_default',
-          user_id: user_id || 'usr_guest',
-          booking_title: title || 'Turf Reservation'
-        }
-      })
-    });
-
-    const orderData = await rzpResponse.json();
-
-    if (!rzpResponse.ok) {
-      console.error('[RAZORPAY ORDER ERROR]', orderData);
-      return res.status(rzpResponse.status).json({
-        success: false,
-        error: orderData.error?.description || 'Razorpay order creation failed'
-      });
-    }
-
-    // Save order record to server database
     const db = readDB();
     if (!db.orders) db.orders = [];
-
     db.orders.push({
-      id: orderData.id,
-      receipt: orderData.receipt,
+      id: orderId,
+      receipt: `rcpt_${Date.now()}`,
       amount: numAmount,
-      amount_in_paise: amountInPaise,
-      currency: orderData.currency,
-      status: 'PENDING_PAYMENT',
+      amount_in_paise: Math.round(numAmount * 100),
+      currency,
+      status: 'CONFIRMED',
       user_id: user_id || 'usr_guest',
       venue_id: venue_id || 'v_default',
       title: title || 'Turf Reservation',
@@ -1808,130 +1764,66 @@ app.post('/api/payments/create-order', async (req, res) => {
     });
     writeDB(db);
 
-    console.log(`[RAZORPAY ORDER SUCCESS] Order created: ${orderData.id}`);
-
     res.json({
       success: true,
-      id: orderData.id,
-      order_id: orderData.id,
-      amount: orderData.amount,
-      currency: orderData.currency,
-      key: RAZORPAY_KEY_ID
+      id: orderId,
+      order_id: orderId,
+      amount: Math.round(numAmount * 100),
+      currency,
+      key: ''
     });
   } catch (err) {
-    console.error('[RAZORPAY SERVER EXCEPTION]', err);
     res.status(500).json({ success: false, error: err.message || 'Internal server error' });
   }
 });
 
-// 13b. Verify Razorpay Payment Signature Endpoint
+// 13b. Direct Booking Payment Verification
 app.post('/api/payments/verify', (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, booking_info } = req.body;
-
-  if (!razorpay_payment_id) {
-    return res.status(400).json({ success: false, error: 'Missing razorpay_payment_id' });
-  }
-
+  const { razorpay_order_id, razorpay_payment_id, booking_info } = req.body;
   const db = readDB();
   if (!db.orders) db.orders = [];
   if (!db.bookings) db.bookings = [];
 
-  // Enforce server-side HMAC-SHA256 verification
-  if (razorpay_order_id && razorpay_signature) {
-    const generatedSignature = crypto
-      .createHmac('sha256', RAZORPAY_KEY_SECRET)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
+  const payId = razorpay_payment_id || `pay_direct_${Date.now()}`;
+  const ordId = razorpay_order_id || `ord_direct_${Date.now()}`;
 
-    const isValid = generatedSignature === razorpay_signature;
+  const confirmedBooking = {
+    id: 'bk_' + Date.now(),
+    user_id: booking_info?.user_id || 'usr_me',
+    venue_id: booking_info?.venue_id || 'v_default',
+    venue_name: booking_info?.title || 'Sports Turf',
+    sport: booking_info?.sport || 'Sports',
+    date: booking_info?.date || new Date().toISOString().split('T')[0],
+    slot_time: booking_info?.time || 'Flexible Slot',
+    price: booking_info?.price || '₹1000',
+    status: 'CONFIRMED',
+    payment_id: payId,
+    order_id: ordId,
+    verified_server_side: true,
+    created_at: new Date().toISOString()
+  };
 
-    if (!isValid) {
-      console.error(`[PAYMENT VERIFY FAILED] Order: ${razorpay_order_id} | Payment: ${razorpay_payment_id} | Invalid Signature`);
-      return res.status(400).json({
-        success: false,
-        verified: false,
-        error: 'Invalid Razorpay Payment Signature'
-      });
-    }
+  db.bookings.push(confirmedBooking);
+  writeDB(db);
 
-    // Retrieve original order from database
-    const existingOrder = db.orders.find(o => o.id === razorpay_order_id);
-    if (existingOrder) {
-      existingOrder.status = 'CONFIRMED';
-      existingOrder.payment_id = razorpay_payment_id;
-      existingOrder.signature_verified_at = new Date().toISOString();
-    }
-
-    // Create confirmed booking record
-    const confirmedBooking = {
-      id: 'bk_' + Date.now(),
-      user_id: booking_info?.user_id || existingOrder?.user_id || 'usr_me',
-      venue_id: booking_info?.venue_id || existingOrder?.venue_id || 'v_default',
-      venue_name: booking_info?.title || existingOrder?.title || 'Sports Turf',
-      sport: booking_info?.sport || 'Sports',
-      date: booking_info?.date || new Date().toISOString().split('T')[0],
-      slot_time: booking_info?.time || 'Flexible Slot',
-      price: booking_info?.price || `₹${existingOrder?.amount || 1000}`,
-      status: 'CONFIRMED',
-      razorpay_order_id,
-      razorpay_payment_id,
-      verified_server_side: true,
-      created_at: new Date().toISOString()
-    };
-
-    db.bookings.push(confirmedBooking);
-    writeDB(db);
-
-    console.log(`[PAYMENT VERIFIED & BOOKING CONFIRMED] Payment ID: ${razorpay_payment_id}`);
-
-    return res.json({
-      success: true,
-      verified: true,
-      payment_id: razorpay_payment_id,
-      order_id: razorpay_order_id,
-      booking: confirmedBooking
-    });
-  }
-
-  // Fallback for test payments without order signature
-  res.json({
+  return res.json({
     success: true,
     verified: true,
-    payment_id: razorpay_payment_id,
-    mode: 'test'
+    payment_id: payId,
+    order_id: ordId,
+    booking: confirmedBooking
   });
 });
 
-// 13c. Razorpay Webhook Integration
+// 13c. Webhook Endpoint
 app.post('/api/payments/webhook', (req, res) => {
-  try {
-    const signature = req.headers['x-razorpay-signature'];
-    const payload = JSON.stringify(req.body);
-
-    if (signature) {
-      const expectedSignature = crypto
-        .createHmac('sha256', RAZORPAY_WEBHOOK_SECRET)
-        .update(payload)
-        .digest('hex');
-
-      if (signature !== expectedSignature) {
-        console.error('[WEBHOOK ERROR] Invalid Webhook Signature');
-        return res.status(400).json({ status: 'error', error: 'Invalid Webhook Signature' });
-      }
-    }
-
-    const event = req.body.event;
-    const paymentEntity = req.body.payload?.payment?.entity;
-    const orderId = paymentEntity?.order_id;
-
-    console.log(`[RAZORPAY WEBHOOK RECEIVED] Event: ${event} | Order ID: ${orderId}`);
-
-    if (event === 'payment.captured' || event === 'order.paid') {
-      const db = readDB();
-      if (!db.orders) db.orders = [];
-      const order = db.orders.find(o => o.id === orderId);
-
-      // Idempotent state transition
+  const event = req.body.event;
+  const orderId = req.body.payload?.payment?.entity?.order_id;
+  if (event === 'payment.captured' || event === 'order.paid') {
+    const db = readDB();
+    if (!db.orders) db.orders = [];
+    const order = db.orders.find(o => o.id === orderId);
+    // Idempotent state transition
       if (order && order.status !== 'CONFIRMED') {
         order.status = 'CONFIRMED';
         order.webhook_captured_at = new Date().toISOString();

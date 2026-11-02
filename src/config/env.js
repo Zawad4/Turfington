@@ -26,9 +26,6 @@ export const ENV = {
     VAPID_KEY: metaEnv.VITE_FIREBASE_VAPID_KEY || 'BFsI2qR98xZ_p193K_gG9P-T3iA7s1eQ69O9qK7O68i'
   },
 
-  // Payment Gateways
-  RAZORPAY_KEY_ID: metaEnv.VITE_RAZORPAY_KEY_ID || '',
-
   // Maps & Location
   GOOGLE_MAPS_API_KEY: metaEnv.VITE_GOOGLE_MAPS_API_KEY || ''
 };

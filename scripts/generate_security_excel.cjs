@@ -129,7 +129,7 @@ const FINDINGS = [
     endpoint: 'server.js (Global Scope)',
     cwe: 'CWE-798: Use of Hard-coded Credentials',
     owasp: 'API8:2023 - Security Misconfiguration',
-    description: 'The Razorpay API secret key has a hardcoded test secret fallback in source code ("F9TIsiGMzIYdvWlirFrdnumh") instead of strictly reading from secure environment variables.',
+    description: 'The Razorpay API secret key has a hardcoded test secret fallback in source code ("REMOVED_SECRET") instead of strictly reading from secure environment variables.',
     impact: 'Exposure of payment gateway credentials leading to unauthorized transaction refunds, customer charge manipulation, and data leaks.',
     remediation: 'Remove default plaintext credential string; require process.env.RAZORPAY_KEY_SECRET to be supplied via secure secret management.'
   },

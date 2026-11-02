@@ -3186,68 +3186,10 @@ export async function apiLikePost(postId, userId) {
   return { success: true };
 }
 
-const INITIAL_MARKETPLACE_ITEMS = [
-  {
-    id: 'mp_item_1',
-    name: 'Stealth Pro Aero Turf Shoes',
-    category: 'Shoes',
-    image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=400',
-    image_url: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=400',
-    price: 3499,
-    tag: 'Pre-owned (Like New)',
-    condition: 'Pre-owned (Like New)',
-    description: 'Pre-owned athletic shoes with professional carbon plate inserts. Excellent grip for synthetic turf.',
-    seller_id: 'usr_seller_1',
-    sellerName: 'Kabir Verma',
-    sellerAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'mp_item_2',
-    name: 'English Willow Cricket Bat (Grade 1)',
-    category: 'Equipment',
-    image: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=400',
-    image_url: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=400',
-    price: 4999,
-    tag: 'New (Sealed Pack)',
-    condition: 'New (Sealed Pack)',
-    description: 'Professional grade 1 English Willow cricket bat with chevron grip and protective toe guard.',
-    seller_id: 'usr_seller_2',
-    sellerName: 'Rohan Sharma',
-    sellerAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'mp_item_3',
-    name: 'Yonex Arcsaber 11 Pro Racket',
-    category: 'Rackets',
-    image: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=400',
-    image_url: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=400',
-    price: 2800,
-    tag: 'Pre-owned (Good)',
-    condition: 'Pre-owned (Good)',
-    description: 'Even balance badminton racket strung with BG80 Power at 26 lbs. Minor scuffs on frame.',
-    seller_id: 'usr_seller_3',
-    sellerName: 'Priya Iyer',
-    sellerAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'mp_item_4',
-    name: 'Official FIFA Match Football',
-    category: 'Equipment',
-    image: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=400',
-    image_url: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=400',
-    price: 1200,
-    tag: 'New (Sealed Pack)',
-    condition: 'New (Sealed Pack)',
-    description: 'Thermally bonded seamless surface match ball. Includes ball net and needle.',
-    seller_id: 'usr_seller_4',
-    sellerName: 'Aditya Nair',
-    sellerAvatar: '',
-    created_at: new Date().toISOString()
-  }
-];
+const MOCK_MARKETPLACE_IDS = new Set(['mp_item_1', 'mp_item_2', 'mp_item_3', 'mp_item_4']);
+const MOCK_SELLER_NAMES = new Set(['Kabir Verma', 'Rohan Sharma', 'Priya Iyer', 'Aditya Nair']);
+
+const INITIAL_MARKETPLACE_ITEMS = [];
 
 export async function apiFetchMarketplaceItems() {
   let localItems = [];
@@ -3256,26 +3198,29 @@ export async function apiFetchMarketplaceItems() {
     if (s) {
       const parsed = JSON.parse(s);
       localItems = Array.isArray(parsed) ? parsed : [];
-    } else {
-      localItems = INITIAL_MARKETPLACE_ITEMS;
     }
   } catch {
-    localItems = INITIAL_MARKETPLACE_ITEMS;
+    localItems = [];
   }
 
-  // Safety fallback if empty or invalid
-  if (!Array.isArray(localItems) || localItems.length === 0) {
-    localItems = INITIAL_MARKETPLACE_ITEMS;
-  }
-
-  // Ensure every item is a valid object with an id
-  localItems = localItems.filter(item => item && typeof item === 'object' && item.id);
+  // Strictly filter out mock items
+  localItems = (localItems || []).filter(item => 
+    item && typeof item === 'object' && item.id &&
+    !MOCK_MARKETPLACE_IDS.has(item.id) &&
+    !MOCK_SELLER_NAMES.has(item.sellerName) &&
+    !MOCK_SELLER_NAMES.has(item.seller_name)
+  );
 
   try {
     const snap = await getDocs(collection(db, 'marketplace_items'));
     if (!snap.empty) {
       const dbItems = snap.docs.map(item => ({ id: item.id, ...item.data() }));
-      const cleanDbItems = dbItems.filter(item => item && typeof item === 'object' && item.id);
+      const cleanDbItems = dbItems.filter(item => 
+        item && typeof item === 'object' && item.id &&
+        !MOCK_MARKETPLACE_IDS.has(item.id) &&
+        !MOCK_SELLER_NAMES.has(item.sellerName) &&
+        !MOCK_SELLER_NAMES.has(item.seller_name)
+      );
       const map = new Map();
       [...cleanDbItems, ...localItems].forEach(item => {
         if (item && item.id) map.set(item.id, item);
@@ -3322,7 +3267,7 @@ export async function apiCreateMarketplaceItem(itemData) {
       const parsed = JSON.parse(existingStr);
       existing = Array.isArray(parsed) ? parsed : [];
     } else {
-      existing = INITIAL_MARKETPLACE_ITEMS;
+      existing = [];
     }
     const updated = [newItem, ...existing.filter(i => i && i.id !== newItem.id)];
     localStorage.setItem('turfington_marketplace_items', JSON.stringify(updated));
@@ -3349,7 +3294,7 @@ export async function apiUpdateMarketplaceItem(itemId, updatedData) {
       const parsed = JSON.parse(existingStr);
       existing = Array.isArray(parsed) ? parsed : [];
     } else {
-      existing = INITIAL_MARKETPLACE_ITEMS;
+      existing = [];
     }
     const updated = existing.map(item => item && item.id === itemId ? { ...item, ...updatedData } : item);
     localStorage.setItem('turfington_marketplace_items', JSON.stringify(updated));

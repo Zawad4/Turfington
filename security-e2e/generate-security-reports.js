@@ -105,7 +105,7 @@ export const SECURITY_FINDINGS = [
     line: 1662,
     endpoint: 'N/A (Global Config)',
     title: 'Hardcoded Razorpay API Key Secret in Source Code',
-    description: 'The Razorpay Key Secret "F9TIsiGMzIYdvWlirFrdnumh" is hardcoded as a fallback in source code rather than requiring a secure environment variable or KMS.',
+    description: 'The Razorpay Key Secret "REMOVED_SECRET" is hardcoded as a fallback in source code rather than requiring a secure environment variable or KMS.',
     scenario: 'An attacker reviewing source code or public repositories extracts the merchant key secret, allowing them to make authorized requests to Razorpay APIs, access transaction ledgers, or forge payment signatures.',
     impact: 'Compromise of payment gateway credentials and merchant account compromise.',
     remediation: 'Remove hardcoded secret string immediately. Require `process.env.RAZORPAY_KEY_SECRET` and throw fatal startup error if absent.'

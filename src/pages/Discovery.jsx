@@ -11,7 +11,6 @@ import SportIcon from '../components/SportIcon';
 import VenueImage from '../components/VenueImage';
 import UserAvatar from '../components/UserAvatar';
 import { apiFetchTurfs, apiFetchNearbyTurfs, apiCreateBooking, apiUpdateBookingStatus, apiFetchNearbyPlayers, apiSearchUsers, apiFollowUser, apiCreateDirectChat, apiSubscribeVenues, apiCreateHostedMatch, apiFetchHostedMatches, apiJoinHostedMatch, apiLeaveHostedMatch } from '../services/db';
-import { openRazorpayCheckout } from '../services/razorpay';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import { useToast } from '../context';
 import { formatTime12Hour } from '../utils/formatters';
