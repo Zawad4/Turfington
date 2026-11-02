@@ -96,6 +96,61 @@ export default function Discovery({
   // Local mirror of user bookings from localStorage and events
   const [localBookings, setLocalBookings] = useState([]);
 
+  // Direct Contact Venue Owner with selected arena context
+  const handleContactVenueOwner = (turf, slot = null) => {
+    if (!turf) return;
+    const venueName = turf.venue || turf.title || turf.name || 'Sports Arena';
+    const ownerId = turf.owner_id || turf.ownerId || turf.owner_uid || ('owner_' + (turf.id || 'default'));
+    const ownerName = turf.owner_name || turf.ownerName || `${venueName} Management`;
+    const priceStr = turf.price || (turf.price_per_hr ? `₹${turf.price_per_hr}/hr` : 'Venue Slot');
+    const slotInfo = slot ? ` for ${slot.time || slot.label || slot}` : '';
+    const initialMsg = `Hi! I have some questions regarding bookings for ${venueName}${slotInfo}.`;
+
+    const ownerTarget = {
+      id: ownerId,
+      uid: ownerId,
+      firebase_uid: ownerId,
+      name: ownerName,
+      displayName: ownerName,
+      full_name: ownerName,
+      email: turf.owner_email || '',
+      avatarUrl: turf.image || turf.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+      avatar: turf.image || turf.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+      role: 'owner',
+      venueName: venueName,
+      productName: venueName,
+      productPrice: priceStr,
+      productImage: turf.image || turf.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+      productCondition: turf.address || turf.location || 'Venue Inquiry',
+      initialMessage: initialMsg,
+      contextBanner: {
+        type: 'venue',
+        title: venueName,
+        price: priceStr,
+        image: turf.image || turf.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+        subtitle: 'Venue Booking Inquiry',
+        initialMessage: initialMsg
+      }
+    };
+
+    // Close any open slot modal
+    setSelectedSlotTurf(null);
+    setChosenSlot(null);
+
+    try {
+      localStorage.setItem('turfington_target_chat_user', JSON.stringify(ownerTarget));
+      window.dispatchEvent(new CustomEvent('turfington_open_direct_chat_target', { detail: ownerTarget }));
+    } catch {}
+
+    if (typeof onStartChat === 'function') {
+      onStartChat(ownerTarget);
+    } else if (typeof setTab === 'function') {
+      setTab('community');
+    } else {
+      window.dispatchEvent(new CustomEvent('turfington_navigate_tab', { detail: 'community' }));
+    }
+  };
+
   useEffect(() => {
     const syncBookings = () => {
       const currentUserId = user?.id || user?.uid || user?.firebase_uid;
@@ -1421,26 +1476,48 @@ export default function Discovery({
 
                                 {/* Slot details & Cancel option */}
                                 <div className="flex justify-between items-center px-1 text-[11px] pt-0.5">
-                                  <span className="text-neutral-400 truncate max-w-[170px]" title={displaySlotTime}>
+                                  <span className="text-neutral-400 truncate max-w-[120px]" title={displaySlotTime}>
                                     {displaySlotTime}
                                   </span>
-                                  <button
-                                    onClick={() => handleCancelUserBooking(activeBookingForTurf || { id: userHostedMatch?.id, venue: turf.venue || turf.title || turf.name }, turf)}
-                                    className="text-neutral-400 hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer font-semibold flex-shrink-0"
-                                  >
-                                    <XCircle className="w-3 h-3 text-rose-400" />
-                                    <span>Cancel</span>
-                                  </button>
+                                  <div className="flex items-center gap-2.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleContactVenueOwner(turf)}
+                                      className="text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1 cursor-pointer font-semibold text-[11px]"
+                                      title="Message Venue Owner"
+                                    >
+                                      <MessageSquare className="w-3 h-3 text-indigo-400" />
+                                      <span>Contact</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleCancelUserBooking(activeBookingForTurf || { id: userHostedMatch?.id, venue: turf.venue || turf.title || turf.name }, turf)}
+                                      className="text-neutral-400 hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer font-semibold flex-shrink-0"
+                                    >
+                                      <XCircle className="w-3 h-3 text-rose-400" />
+                                      <span>Cancel</span>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             ) : (
-                              <button
-                                onClick={() => setSelectedSlotTurf(turf)}
-                                className="w-full text-xs font-extrabold uppercase tracking-widest bg-[#5842fe] hover:bg-[#4832ee] text-white py-3.5 rounded-full transition-all flex items-center justify-center space-x-2 shadow-[0_0_20px_rgba(88,66,254,0.35)] cursor-pointer hover:scale-[1.02]"
-                              >
-                                <span>Select Slot & Book</span>
-                                <ChevronRight className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleContactVenueOwner(turf)}
+                                  className="py-3.5 px-3.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 hover:text-white transition-all flex items-center justify-center space-x-1.5 cursor-pointer text-xs font-bold shrink-0"
+                                  title="Contact Venue Owner"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+                                  <span>Contact Owner</span>
+                                </button>
+                                <button
+                                  onClick={() => setSelectedSlotTurf(turf)}
+                                  className="flex-1 text-xs font-extrabold uppercase tracking-widest bg-[#5842fe] hover:bg-[#4832ee] text-white py-3.5 rounded-full transition-all flex items-center justify-center space-x-2 shadow-[0_0_20px_rgba(88,66,254,0.35)] cursor-pointer hover:scale-[1.02]"
+                                >
+                                  <span>Select Slot & Book</span>
+                                  <ChevronRight className="w-4 h-4" />
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>

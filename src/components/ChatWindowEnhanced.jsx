@@ -45,7 +45,16 @@ export default function ChatWindowEnhanced({
   const [messages, setMessages] = useState(() => {
     return conversationId ? getLocalMessages(conversationId) : [];
   });
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() => {
+    return chat?.initialMessage || contextBanner?.initialMessage || '';
+  });
+
+  useEffect(() => {
+    const msg = chat?.initialMessage || contextBanner?.initialMessage;
+    if (msg) {
+      setInput(msg);
+    }
+  }, [conversationId, chat?.initialMessage, contextBanner?.initialMessage]);
   const [loading, setLoading] = useState(() => {
     const init = conversationId ? getLocalMessages(conversationId) : [];
     return init.length === 0;

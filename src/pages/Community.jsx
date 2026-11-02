@@ -457,7 +457,13 @@ export default function Community({ user, setTab }) {
         avatar: athleteAvatar,
         avatarUrl: athleteAvatar,
         isMember: true,
-        participants: [currentUserId, athleteId]
+        participants: [currentUserId, athleteId],
+        venueName: athlete.venueName || athlete.productName,
+        productName: athlete.productName || athlete.venueName,
+        productPrice: athlete.productPrice,
+        productImage: athlete.productImage,
+        initialMessage: athlete.initialMessage,
+        contextBanner: athlete.contextBanner
       };
 
       // Immediately add/ensure in inboxItems state so conversation is visible in Direct DMs list
@@ -1271,6 +1277,7 @@ export default function Community({ user, setTab }) {
               onJoinGroup={() => handleJoinGroup(activeChat)}
               onLeaveGroup={() => handleLeaveGroup(activeChat)}
               onBack={() => setActiveChat(null)}
+              contextBanner={activeChat.contextBanner}
             />
           ) : (
             <div className="flex-grow flex flex-col items-center justify-center p-8 text-center text-neutral-500 relative overflow-hidden">

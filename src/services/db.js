@@ -2133,128 +2133,24 @@ export function resolveVenueImageUrl(pathOrUrl, bucket = 'venue-images') {
   return pathOrUrl;
 }
 
-const DEFAULT_TURFS = [
-  {
-    id: 'turf_together',
-    name: 'Turf Together',
-    category: 'Cricket',
-    address: '22/1, Erikarai Road, near SKR Engineering College, Meppur, Poonamallee, Chennai, Tamil Nadu 600123',
-    latitude: 13.0389,
-    longitude: 80.0937,
-    lat: 13.0389,
-    lng: 80.0937,
-    price: '₹1,200/hr',
-    price_per_hr: 1200,
-    rating: 4.8,
-    reviewsCount: 112,
-    sports: ['Cricket', 'Football'],
-    image_url: 'https://images.unsplash.com/photo-1575361204480-aadea25e6e68?q=80&w=800',
-    image: 'https://images.unsplash.com/photo-1575361204480-aadea25e6e68?q=80&w=800',
-    description: 'Premier box cricket and football turf facility in Poonamallee.',
-    is_open_24_hours: true
-  },
-  {
-    id: 'turf_tlk_sports_academy',
-    name: 'TLK Sports Academy',
-    category: 'Badminton',
-    address: 'Pidarithangal, Poonamallee, Chennai, Tamil Nadu 600056',
-    latitude: 13.0448,
-    longitude: 80.0737,
-    lat: 13.0448,
-    lng: 80.0737,
-    price: '₹200/hr',
-    price_per_hr: 200,
-    rating: 4.7,
-    reviewsCount: 94,
-    sports: ['Badminton'],
-    image_url: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=800',
-    image: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=800',
-    description: 'Professional indoor badminton courts with BWF standard matting.',
-    is_open_24_hours: true
-  },
-  {
-    id: 'turf_thiram_sports_academy',
-    name: 'Thiram Sports Academy – Poonamallee',
-    category: 'Pickleball',
-    address: 'Trunk Road, Poonamallee, Chennai, Tamil Nadu 600056',
-    latitude: 13.0466,
-    longitude: 80.0715,
-    lat: 13.0466,
-    lng: 80.0715,
-    price: '₹350/hr',
-    price_per_hr: 350,
-    rating: 4.6,
-    reviewsCount: 88,
-    sports: ['Pickleball', 'Cricket'],
-    image_url: 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?q=80&w=800',
-    image: 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?q=80&w=800',
-    description: 'Dedicated pickleball arena and multi-sport practice grounds.',
-    is_open_24_hours: true
-  },
-  {
-    id: 'turf_whistle_podu_arena',
-    name: 'Whistle Podu Arena',
-    category: 'Cricket',
-    address: 'Etti Annal Nagar, Sankar Nagar Main Road, Poonamallee, Chennai, Tamil Nadu 600056',
-    latitude: 13.0477,
-    longitude: 80.0850,
-    lat: 13.0477,
-    lng: 80.0850,
-    price: '₹1,100/hr',
-    price_per_hr: 1100,
-    rating: 4.9,
-    reviewsCount: 145,
-    sports: ['Cricket', 'Football'],
-    image_url: 'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?q=80&w=800',
-    image: 'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?q=80&w=800',
-    description: 'Popular oval-shaped box cricket turf and football pitch.',
-    is_open_24_hours: true
-  },
-  {
-    id: 'venue_bridgestone_basketball',
-    name: 'Bridgestone Basketball Arena',
-    venue: 'Bridgestone Basketball Arena',
-    category: 'Basketball',
-    sport: 'Basketball',
-    sports: ['Basketball'],
-    address: '100 Feet Road, Vadapalani, Chennai, Tamil Nadu 600026',
-    location: '100 Feet Road, Vadapalani, Chennai, Tamil Nadu 600026',
-    latitude: 13.0512,
-    longitude: 80.2084,
-    lat: 13.0512,
-    lng: 80.2084,
-    price: '₹800/hr',
-    price_per_hr: 800,
-    rating: 4.9,
-    reviewsCount: 38,
-    image_url: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?q=80&w=800',
-    image: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?q=80&w=800',
-    description: 'Premier indoor FIBA-regulation hardwood basketball court with glass backboards, electronic scoreboards, and professional lighting.',
-    is_open_24_hours: true,
-    isNew: true,
-    owner_id: 'ayesha_khaan_owner',
-    owner_name: 'Ayesha Khaan'
-  },
-  {
-    id: 'turf_pav_sports_club',
-    name: 'PAV Sports Club',
-    category: 'Football',
-    address: 'Kumananchavadi, Poonamallee, Chennai, Tamil Nadu 600056',
-    latitude: 13.0557124,
-    longitude: 80.0926404,
-    lat: 13.0557124,
-    lng: 80.0926404,
-    price: '₹1,000/hr',
-    price_per_hr: 1000,
-    rating: 4.5,
-    reviewsCount: 76,
-    sports: ['Cricket', 'Football'],
-    image_url: 'https://images.unsplash.com/photo-1504450758481-7338eba7524a?q=80&w=800',
-    image: 'https://images.unsplash.com/photo-1504450758481-7338eba7524a?q=80&w=800',
-    description: 'High-quality multi-sport synthetic turf facility.',
-    is_open_24_hours: true
-  }
-];
+const DEFAULT_TURFS = [];
+
+// Clean fresh start purge of legacy test venues & hosted matches
+if (typeof window !== 'undefined') {
+  try {
+    const purgeKey = 'turfington_venues_fresh_start_v2';
+    if (!localStorage.getItem(purgeKey)) {
+      localStorage.removeItem('turfington_custom_venues');
+      localStorage.removeItem('turfington_hosted_matches');
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('turfington_venue_slots_') || k.startsWith('turfington_owner_venues_')) {
+          localStorage.removeItem(k);
+        }
+      });
+      localStorage.setItem(purgeKey, 'true');
+    }
+  } catch {}
+}
 
 export async function apiFetchVenues(filters = {}) {
   let customVenues = [];

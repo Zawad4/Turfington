@@ -101,40 +101,7 @@ export const TIME_SLOTS = [
   '18:00', '19:00', '20:00', '21:00', '22:00', '23:00',
 ];
 
-const INITIAL_VENUES = [
-  {
-    id: 1,
-    name: 'Vanguard Sports Arena',
-    location: 'Anna Nagar, Chennai',
-    sports: ['Football', 'Basketball', 'Pickleball'],
-    rating: 4.9,
-    pricePerHour: 3750,
-    image: 'https://images.unsplash.com/photo-1538388149142-f82611d4d6c4?q=80&w=600',
-    totalSlots: 24,
-    bookedToday: 14,
-    revenue: { week: 403380, month: 1614000 },
-    slots: {},   // day -> time -> status
-    active: true,
-    phone: '+91 98765 43210',
-    description: 'Premium astroturf arena with floodlights, changing rooms, and cafeteria.',
-  },
-  {
-    id: 2,
-    name: 'Smash Club Badminton',
-    location: 'Koramangala, Bangalore',
-    sports: ['Badminton', 'Table Tennis'],
-    rating: 4.8,
-    pricePerHour: 2500,
-    image: '/smash_club_badminton.jpg',
-    totalSlots: 16,
-    bookedToday: 10,
-    revenue: { week: 175000, month: 700000 },
-    slots: {},
-    active: true,
-    phone: '+91 98400 12345',
-    description: 'Six professional badminton courts with wooden flooring and pro-level nets.',
-  },
-];
+const INITIAL_VENUES = [];
 
 /* Generate default slots: ALL OPEN / AVAILABLE for new venues/games */
 export function generateSlots(defaultStatus = 'available') {
