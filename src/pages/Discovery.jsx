@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, MapPin, SlidersHorizontal, Calendar,
+  Search, MapPin, Gamepad2, SlidersHorizontal, Calendar,
   Clock, Trophy, Users, Star, Lock, Loader2,
   UserPlus, UserCheck, MessageCircle, Medal, ChevronRight,
   Navigation, Wifi, WifiOff, RefreshCw, CreditCard, Check, Compass,
@@ -58,7 +58,9 @@ export default function Discovery({
 }) {
   const { toast } = useToast();
   const [selectedDealsVenue, setSelectedDealsVenue] = useState(null);
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [nearYouSubTab, setNearYouSubTab] = useState('venues'); // 'venues' | 'join_games' | 'all'
   const [activeTab, setActiveTab] = useState('Near You');
   const [radiusKm, setRadiusKm] = useState('All'); // Default 'All' so all venues are immediately discoverable
   const [selectedMarker, setSelectedMarker] = useState(null);
@@ -875,25 +877,51 @@ export default function Discovery({
         )}
       </div>
 
-      {/* 1. TOP LARGE SEARCH BAR & FILTER TOGGLE */}
+      {/* 1. TOP LARGE SEARCH BAR WITH CLICKABLE SEARCH BUTTON & FILTER TOGGLE */}
       <div className="flex flex-col md:flex-row gap-4 mb-8 w-full font-sans">
-        <div className="relative flex-grow">
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSearchQuery(searchInput.trim());
+          }}
+          className="relative flex-grow flex items-center"
+        >
           <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none text-neutral-400">
             <Search className="w-5 h-5" />
           </div>
           <input 
             type="text" 
-            placeholder="Search activities nearby (e.g. Football near me, Bowling tonight, Badminton partners)..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-14 pr-6 py-5 bg-[#121212]/90 border border-white/5 rounded-full text-base font-light text-white placeholder-neutral-500 focus:outline-none focus:border-white/20 focus:ring-1 focus:ring-white/10 transition-all duration-300 shadow-[0_4px_30px_rgba(0,0,0,0.4)]"
+            placeholder="Search turfs, venues, sports, or games (e.g. Bridgestone, Basketball, Football)..."
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              setSearchQuery(e.target.value);
+            }}
+            className="w-full pl-14 pr-36 py-5 bg-[#121212]/90 border border-white/5 rounded-full text-base font-light text-white placeholder-neutral-500 focus:outline-none focus:border-white/20 focus:ring-1 focus:ring-white/10 transition-all duration-300 shadow-[0_4px_30px_rgba(0,0,0,0.4)]"
           />
-          <div className="absolute inset-y-0 right-3 flex items-center pr-2">
-            <span className="hidden md:inline-block text-[10px] text-neutral-500 bg-neutral-800 border border-white/5 px-2.5 py-1.5 rounded-full font-mono">
-              ⌘ K
-            </span>
+          <div className="absolute inset-y-0 right-3 flex items-center gap-2">
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchInput('');
+                  setSearchQuery('');
+                }}
+                className="p-1.5 text-neutral-400 hover:text-white transition-colors cursor-pointer rounded-full hover:bg-white/10"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="submit"
+              className="px-5 py-2.5 bg-[#5842fe] hover:bg-[#4a35ea] text-white text-xs font-black uppercase tracking-wider rounded-full transition-all shadow-lg shadow-[#5842fe]/30 cursor-pointer flex items-center gap-1.5 active:scale-95"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>Search</span>
+            </button>
           </div>
-        </div>
+        </form>
         
         <button
           onClick={() => setShowFilters(!showFilters)}
@@ -1034,133 +1062,192 @@ export default function Discovery({
           {/* RESULTS COLUMN */}
           <div className="space-y-5 text-left h-full">
             
-            {/* TABS CONTENT: 🏟 Near You */}
-            {activeTab === 'Near You' && (
-              <div className="space-y-6">
-                {/* Header & Radius Filter Bar */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 border border-white/5 rounded-2xl">
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xl">🏟️</span>
-                      <h2 className="font-display font-black text-white text-lg uppercase tracking-tight">Turfs Near You</h2>
-                    </div>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      Showing venues {radiusKm === 'All' ? <span className="text-emerald-400 font-bold">across all distances</span> : <>within <span className="text-emerald-400 font-bold">{radiusKm} km</span> radius</>}
-                      {userCoordinates ? ` of (${userCoordinates.lat.toFixed(4)}, ${userCoordinates.lng.toFixed(4)})` : ''}
-                    </p>
-                  </div>
+            {/* TABS CONTENT: 🏟 Near You (Venues first, Join Games next) */}
+            {activeTab === 'Near You' && (() => {
+              const userLat = userCoordinates?.lat || 13.0827; // Default Chennai center
+              const userLng = userCoordinates?.lng || 80.2707;
 
-                  {/* Radius Quick Selector */}
-                  <div className="flex items-center space-x-2 bg-[#0a0a0a] p-1.5 rounded-full border border-white/10 self-start sm:self-auto overflow-x-auto no-scrollbar">
-                    <span className="text-[10px] text-neutral-400 uppercase font-bold pl-3 pr-1">Radius:</span>
-                    {[5, 10, 20, 30, 50, 'All'].map(r => (
+              const nearbyList = activities
+                .map(turf => {
+                  const distNum = haversine(userLat, userLng, turf.lat || 13.0827, turf.lng || 80.2707);
+                  return { ...turf, distanceNum: distNum, distanceText: `${distNum} km away` };
+                })
+                .filter(turf => {
+                  if (selectedSport !== 'All') {
+                    const targetSport = selectedSport.toLowerCase();
+                    const sMatch = (turf.sport && turf.sport.toLowerCase() === targetSport) ||
+                                   (turf.category && turf.category.toLowerCase() === targetSport) ||
+                                   (Array.isArray(turf.sports) && turf.sports.some(s => s && s.toLowerCase() === targetSport));
+                    if (!sMatch) return false;
+                  }
+                  if (searchQuery.trim()) {
+                    const q = searchQuery.toLowerCase().trim();
+                    const titleMatch = (turf.title && turf.title.toLowerCase().includes(q)) ||
+                                       (turf.venue && turf.venue.toLowerCase().includes(q)) ||
+                                       (turf.name && turf.name.toLowerCase().includes(q));
+                    const sportMatch = (turf.sport && turf.sport.toLowerCase() === targetSport) ||
+                                       (turf.category && turf.category.toLowerCase() === targetSport) ||
+                                       (Array.isArray(turf.sports) && turf.sports.some(s => s && s.toLowerCase() === q));
+                    const addrMatch = (turf.address && turf.address.toLowerCase().includes(q)) ||
+                                      (turf.location && turf.location.toLowerCase().includes(q));
+                    if (!titleMatch && !sportMatch && !addrMatch) return false;
+                  }
+                  if (radiusKm === 'All' || turf.isNew || turf.owner_id != null) return true;
+                  return turf.distanceNum <= Number(radiusKm);
+                })
+                .sort((a, b) => {
+                  if (a.isNew && !b.isNew) return -1;
+                  if (!a.isNew && b.isNew) return 1;
+                  return a.distanceNum - b.distanceNum;
+                });
+
+              return (
+                <div className="space-y-8">
+                  {/* Sub-Section Navigation Switcher Pills */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-4 border border-white/5 rounded-2xl">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2.5 bg-[#5842fe]/10 rounded-xl text-[#5842fe] border border-[#5842fe]/20">
+                        <MapPin className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h2 className="font-display font-black text-white text-base uppercase tracking-tight">Near You</h2>
+                        <p className="text-[11px] text-neutral-400">Venues first, followed by active join-game sessions</p>
+                      </div>
+                    </div>
+
+                    {/* Sub-section Switcher Pills: Venues first, Join Games next */}
+                    <div className="flex items-center space-x-1.5 bg-[#0a0a0a] p-1.5 rounded-full border border-white/10 self-start sm:self-auto overflow-x-auto no-scrollbar">
                       <button
-                        key={r}
-                        onClick={() => setRadiusKm(r)}
-                        className={`px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer flex-shrink-0 ${
-                          radiusKm === r
+                        type="button"
+                        onClick={() => setNearYouSubTab('venues')}
+                        className={`px-4 py-2 rounded-full text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                          nearYouSubTab === 'venues'
                             ? 'bg-[#5842fe] text-white shadow-lg shadow-[#5842fe]/30'
                             : 'text-neutral-400 hover:text-white'
                         }`}
                       >
-                        {r === 'All' ? 'All' : `${r} km`}
+                        <span>🏟️ Venues</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${nearYouSubTab === 'venues' ? 'bg-white/20 text-white' : 'bg-white/5 text-neutral-400'}`}>
+                          {nearbyList.length}
+                        </span>
                       </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Location Permission Prompt Banner if denied / missing */}
-                {locationStatus !== 'granted' && (
-                  <div className="glass-card p-6 border border-indigo-500/30 bg-indigo-500/5 text-left flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center space-x-4">
-                      <div className="p-3 bg-indigo-500/20 rounded-2xl text-indigo-400 border border-indigo-500/30">
-                        <Navigation className="w-6 h-6 animate-pulse" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-white text-sm">Request Location Permission</h4>
-                        <p className="text-xs text-neutral-400 mt-1">
-                          Grant location access to detect your exact GPS coordinates and view turfs nearest to you.
-                        </p>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setNearYouSubTab('join_games')}
+                        className={`px-4 py-2 rounded-full text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                          nearYouSubTab === 'join_games'
+                            ? 'bg-[#5842fe] text-white shadow-lg shadow-[#5842fe]/30'
+                            : 'text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        <span>🎮 Join Games</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${nearYouSubTab === 'join_games' ? 'bg-white/20 text-white' : 'bg-white/5 text-neutral-400'}`}>
+                          {filteredActivities.length}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNearYouSubTab('all')}
+                        className={`px-3.5 py-2 rounded-full text-xs font-black transition-all cursor-pointer ${
+                          nearYouSubTab === 'all'
+                            ? 'bg-white text-black font-extrabold shadow-md'
+                            : 'text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        <span>⚡ View Both</span>
+                      </button>
                     </div>
-                    <button
-                      onClick={handleDetectLocation}
-                      disabled={locationStatus === 'detecting'}
-                      className="flex-shrink-0 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-full transition-all shadow-lg shadow-indigo-600/30 cursor-pointer"
-                    >
-                      {locationStatus === 'detecting' ? 'Detecting Location...' : 'Allow Location'}
-                    </button>
                   </div>
-                )}
 
-                {/* Nearby Turfs Grid */}
-                {(() => {
-                  const userLat = userCoordinates?.lat || 13.0827; // Default Chennai center
-                  const userLng = userCoordinates?.lng || 80.2707;
+                  {/* ─────────────────────────────────────────────────────────── */}
+                  {/* SUB-SECTION 1: 🏟️ VENUES (FIRST)                            */}
+                  {/* ─────────────────────────────────────────────────────────── */}
+                  {(nearYouSubTab === 'venues' || nearYouSubTab === 'all') && (
+                    <div className="space-y-6">
+                      {/* Header & Radius Filter Bar */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 border border-white/5 rounded-2xl">
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xl">🏟️</span>
+                            <h3 className="font-display font-black text-white text-lg uppercase tracking-tight">
+                              Turf Venues ({nearbyList.length})
+                            </h3>
+                          </div>
+                          <p className="text-xs text-neutral-400 mt-0.5">
+                            Showing venues {radiusKm === 'All' ? <span className="text-emerald-400 font-bold">across all distances</span> : <>within <span className="text-emerald-400 font-bold">{radiusKm} km</span> radius</>}
+                            {userCoordinates ? ` of (${userCoordinates.lat.toFixed(4)}, ${userCoordinates.lng.toFixed(4)})` : ''}
+                          </p>
+                        </div>
 
-                  const nearbyList = activities
-                    .map(turf => {
-                      const distNum = haversine(userLat, userLng, turf.lat || 13.0827, turf.lng || 80.2707);
-                      return { ...turf, distanceNum: distNum, distanceText: `${distNum} km away` };
-                    })
-                    .filter(turf => {
-                      if (selectedSport !== 'All') {
-                        const targetSport = selectedSport.toLowerCase();
-                        const sMatch = (turf.sport && turf.sport.toLowerCase() === targetSport) ||
-                                       (turf.category && turf.category.toLowerCase() === targetSport) ||
-                                       (Array.isArray(turf.sports) && turf.sports.some(s => s && s.toLowerCase() === targetSport));
-                        if (!sMatch) return false;
-                      }
-                      if (searchQuery.trim()) {
-                        const q = searchQuery.toLowerCase().trim();
-                        const titleMatch = (turf.title && turf.title.toLowerCase().includes(q)) ||
-                                           (turf.venue && turf.venue.toLowerCase().includes(q)) ||
-                                           (turf.name && turf.name.toLowerCase().includes(q));
-                        const sportMatch = (turf.sport && turf.sport.toLowerCase().includes(q)) ||
-                                           (turf.category && turf.category.toLowerCase().includes(q)) ||
-                                           (Array.isArray(turf.sports) && turf.sports.some(s => s && s.toLowerCase() === q));
-                        const addrMatch = (turf.address && turf.address.toLowerCase().includes(q)) ||
-                                          (turf.location && turf.location.toLowerCase().includes(q));
-                        if (!titleMatch && !sportMatch && !addrMatch) return false;
-                      }
-                      if (radiusKm === 'All' || turf.isNew || turf.owner_id != null) return true;
-                      return turf.distanceNum <= Number(radiusKm);
-                    })
-                    .sort((a, b) => {
-                      if (a.isNew && !b.isNew) return -1;
-                      if (!a.isNew && b.isNew) return 1;
-                      return a.distanceNum - b.distanceNum;
-                    });
-
-                  if (nearbyList.length === 0) {
-                    return (
-                      <div className="glass-card p-12 text-center border border-dashed border-white/10 space-y-3">
-                        <MapPin className="w-10 h-10 text-neutral-600 mx-auto" />
-                        <h3 className="text-white font-bold text-base">No Turfs Found Within {radiusKm} km</h3>
-                        <p className="text-neutral-500 text-xs max-w-md mx-auto">
-                          There are no registered turfs in this immediate radius. Expand your radius filter to view more venues.
-                        </p>
-                        <div className="flex justify-center space-x-2 pt-2">
-                          <button
-                            onClick={() => setRadiusKm(20)}
-                            className="px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full transition-all cursor-pointer"
-                          >
-                            Expand to 20 km
-                          </button>
-                          <button
-                            onClick={() => setRadiusKm('All')}
-                            className="px-4 py-2 text-xs font-bold bg-[#5842fe] hover:bg-[#4a35ea] text-white rounded-full transition-all cursor-pointer shadow-lg shadow-[#5842fe]/30"
-                          >
-                            View All Venues ({activities.length})
-                          </button>
+                        {/* Radius Quick Selector */}
+                        <div className="flex items-center space-x-2 bg-[#0a0a0a] p-1.5 rounded-full border border-white/10 self-start sm:self-auto overflow-x-auto no-scrollbar">
+                          <span className="text-[10px] text-neutral-400 uppercase font-bold pl-3 pr-1">Radius:</span>
+                          {[5, 10, 20, 30, 50, 'All'].map(r => (
+                            <button
+                              key={r}
+                              onClick={() => setRadiusKm(r)}
+                              className={`px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer flex-shrink-0 ${
+                                radiusKm === r
+                                  ? 'bg-[#5842fe] text-white shadow-lg shadow-[#5842fe]/30'
+                                  : 'text-neutral-400 hover:text-white'
+                              }`}
+                            >
+                              {r === 'All' ? 'All' : `${r} km`}
+                            </button>
+                          ))}
                         </div>
                       </div>
-                    );
-                  }
 
-                  return (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {nearbyList.map((turf) => {
+                      {/* Location Permission Prompt Banner if denied / missing */}
+                      {locationStatus !== 'granted' && (
+                        <div className="glass-card p-6 border border-indigo-500/30 bg-indigo-500/5 text-left flex flex-col md:flex-row items-center justify-between gap-4">
+                          <div className="flex items-center space-x-4">
+                            <div className="p-3 bg-indigo-500/20 rounded-2xl text-indigo-400 border border-indigo-500/30">
+                              <Navigation className="w-6 h-6 animate-pulse" />
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-white text-sm">Request Location Permission</h4>
+                              <p className="text-xs text-neutral-400 mt-1">
+                                Grant location access to detect your exact GPS coordinates and view turfs nearest to you.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleDetectLocation}
+                            disabled={locationStatus === 'detecting'}
+                            className="flex-shrink-0 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-full transition-all shadow-lg shadow-indigo-600/30 cursor-pointer"
+                          >
+                            {locationStatus === 'detecting' ? 'Detecting Location...' : 'Allow Location'}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Nearby Turfs Grid */}
+                      {nearbyList.length === 0 ? (
+                        <div className="glass-card p-12 text-center border border-dashed border-white/10 space-y-3">
+                          <MapPin className="w-10 h-10 text-neutral-600 mx-auto" />
+                          <h3 className="text-white font-bold text-base">No Turfs Found Within {radiusKm} km</h3>
+                          <p className="text-neutral-500 text-xs max-w-md mx-auto">
+                            There are no registered turfs in this immediate radius. Expand your radius filter to view more venues.
+                          </p>
+                          <div className="flex justify-center space-x-2 pt-2">
+                            <button
+                              onClick={() => setRadiusKm(20)}
+                              className="px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full transition-all cursor-pointer"
+                            >
+                              Expand to 20 km
+                            </button>
+                            <button
+                              onClick={() => setRadiusKm('All')}
+                              className="px-4 py-2 text-xs font-bold bg-[#5842fe] hover:bg-[#4a35ea] text-white rounded-full transition-all cursor-pointer shadow-lg shadow-[#5842fe]/30"
+                            >
+                              View All Venues ({activities.length})
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {nearbyList.map((turf) => {
                         const currentUserId = user?.id || user?.uid || user?.firebase_uid;
                         const turfTitle = String(turf.venue || turf.title || turf.name || '').toLowerCase().trim();
                         const turfIdStr = String(turf.id || '').trim();
@@ -1304,158 +1391,38 @@ export default function Discovery({
                           </div>
                         </div>
                       )})}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* TABS CONTENT: 🏃 Players Near You */}
-            {activeTab === 'Players' && (
-              <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 border border-white/5 rounded-2xl">
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xl">🏃</span>
-                      <h2 className="font-display font-black text-white text-lg uppercase tracking-tight">
-                        {searchQuery ? `Search Results for "${searchQuery}"` : 'Players Near You'}
-                      </h2>
-                    </div>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      Showing all registered players ({dbPlayersList.length} athletes)
-                    </p>
-                  </div>
-
-                  <div className="flex items-center space-x-2 bg-[#0a0a0a] p-1.5 rounded-full border border-white/10 self-start sm:self-auto overflow-x-auto no-scrollbar">
-                    <span className="text-[10px] text-neutral-400 uppercase font-bold pl-3 pr-1">Max Distance:</span>
-                    {[5, 10, 20, 30, 50].map(r => (
-                      <button
-                        key={r}
-                        onClick={() => setRadiusKm(r)}
-                        className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                          radiusKm === r
-                            ? 'bg-indigo-600 text-white font-black shadow-md'
-                            : 'text-neutral-400 hover:text-white'
-                        }`}
-                      >
-                        {r} km
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {playersLoading ? (
-                  <div className="glass-card p-12 text-center border border-white/5 flex items-center justify-center space-x-3 text-indigo-400">
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                    <span className="text-sm font-bold">Searching for registered players...</span>
-                  </div>
-                ) : dbPlayersList.length === 0 ? (
-                  <div className="glass-card p-12 text-center border border-dashed border-white/10 space-y-3">
-                    <Users className="w-10 h-10 text-neutral-600 mx-auto" />
-                    <h3 className="text-white font-bold text-base">No users found</h3>
-                    <p className="text-neutral-500 text-xs max-w-md mx-auto">
-                      No matching registered player profiles found. Try searching by their Player ID (e.g. @handle) or name.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {dbPlayersList.map((player) => {
-                      const isFollowing = followedPlayers.includes(player.id);
-                      const displayPlayerId = player.player_id || player.handle || (player.username ? (player.username.startsWith('@') ? player.username : `@${player.username}`) : `@athlete_${String(player.id).slice(-4)}`);
-                      return (
-                        <div
-                          key={player.id}
-                          onClick={() => setSelectedPlayerModal(player)}
-                          className="glass-card p-5 border border-white/5 hover:border-indigo-500/30 transition-all duration-300 cursor-pointer flex flex-col justify-between group"
-                        >
-                          <div className="space-y-4">
-                            <div className="flex items-center space-x-3.5">
-                              <img
-                                src={player.avatar_url || player.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.id}`}
-                                alt={player.full_name || player.name}
-                                className="w-13 h-13 rounded-full object-cover border-2 border-indigo-500/30 group-hover:border-indigo-400 transition-colors"
-                              />
-                              <div className="text-left overflow-hidden">
-                                <h3 className="font-bold text-white text-base truncate group-hover:text-indigo-400 transition-colors">
-                                  {player.full_name || player.name || 'Sports Player'}
-                                </h3>
-                                <p className="text-xs text-indigo-300 font-mono font-bold truncate">
-                                  {displayPlayerId}
-                                </p>
-                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border mt-1 inline-block ${
-                                  player.role === 'owner' ? 'bg-amber-500/10 text-amber-300 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                                }`}>
-                                  {player.role === 'owner' ? '🏟️ Venue Owner' : '🏃 Player'}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between text-xs pt-3 border-t border-white/5 text-neutral-400">
-                              <span className="flex items-center gap-1 text-emerald-400 font-extrabold">
-                                <MapPin className="w-3.5 h-3.5" />
-                                {player.distanceText || 'Nearby'}
-                              </span>
-                              <span>{player.city || player.location || 'Chennai'}</span>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 pt-3 flex items-center space-x-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleFollow(player.id);
-                              }}
-                              className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
-                                isFollowing
-                                  ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-rose-500/15 hover:text-rose-400 hover:border-rose-500/30'
-                                  : 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent shadow-md shadow-indigo-600/30'
-                              }`}
-                            >
-                              {isFollowing ? <UserCheck className="w-3.5 h-3.5 text-indigo-400" /> : <UserPlus className="w-3.5 h-3.5" />}
-                              <span>{isFollowing ? 'Following' : '+ Follow'}</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (onStartChat) {
-                                  onStartChat(player);
-                                } else if (setTab) {
-                                  try {
-                                    localStorage.setItem('turfington_target_chat_user', JSON.stringify(player));
-                                  } catch {}
-                                  setTab('community');
-                                }
-                              }}
-                              className="px-3.5 py-2 text-xs font-bold rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all flex items-center justify-center space-x-1 cursor-pointer"
-                              title="Message & Chat"
-                            >
-                              <MessageCircle className="w-3.5 h-3.5 text-indigo-400" />
-                              <span>Message</span>
-                            </button>
-                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+                      )}
+                    </div>
+                  )}
 
-            {/* TABS CONTENT: Activities */}
-            {activeTab === 'Activities' && (
-              <>
-                <p className="text-xs text-neutral-400 font-bold uppercase mb-2">
-                  Activities ({filteredActivities.length})
-                </p>
-                {filteredActivities.length === 0 ? (
-                  <div className="glass-card p-8 text-center border border-dashed border-white/10">
-                    <p className="text-neutral-500 text-sm">No matching sessions found. Try clearing filters.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredActivities.map(act => {
+                  {/* ─────────────────────────────────────────────────────────── */}
+                  {/* SUB-SECTION 2: 🎮 JOIN GAMES (NEXT)                          */}
+                  {/* ─────────────────────────────────────────────────────────── */}
+                  {(nearYouSubTab === 'join_games' || nearYouSubTab === 'all') && (
+                    <div className="space-y-6 pt-2">
+                      <div className="glass-card p-5 border border-white/5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xl">🎮</span>
+                            <h3 className="font-display font-black text-white text-lg uppercase tracking-tight">
+                              Join Games ({filteredActivities.length})
+                            </h3>
+                          </div>
+                          <p className="text-xs text-neutral-400 mt-0.5">
+                            Open matches, hosted games, and sports sessions looking for squad players
+                          </p>
+                        </div>
+                      </div>
+
+                      {filteredActivities.length === 0 ? (
+                        <div className="glass-card p-8 text-center border border-dashed border-white/10 space-y-2">
+                          <p className="text-neutral-400 font-bold text-sm">No active game sessions found.</p>
+                          <p className="text-neutral-500 text-xs">Try selecting 'All Sports' or host your own match from any venue card above!</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {filteredActivities.map(act => {
                       const req = matchRequests.find(r => r.matchId === act.id && (r.userId === (user?.id || 'usr_curr') || r.userId === 'usr_amit_patel'));
                       const reqStatus = req ? req.status : (joinedMatches.includes(act.id) ? 'approved' : 'none');
                       const joined = reqStatus === 'approved';
@@ -1623,205 +1590,144 @@ export default function Discovery({
                         </div>
                       );
                     })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* TABS CONTENT: 🏃 Players Near You */}
+            {activeTab === 'Players' && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 border border-white/5 rounded-2xl">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xl">🏃</span>
+                      <h2 className="font-display font-black text-white text-lg uppercase tracking-tight">
+                        {searchQuery ? `Search Results for "${searchQuery}"` : 'Players Near You'}
+                      </h2>
+                    </div>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      Showing all registered players ({dbPlayersList.length} athletes)
+                    </p>
                   </div>
-                )}
-              </>
-            )}
 
-            {/* TABS CONTENT: Venues */}
-            {activeTab === 'Venues' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {activities
-                  .filter(v => {
-                    if (selectedSport !== 'All') {
-                      const targetSport = selectedSport.toLowerCase();
-                      const sMatch = (v.sport && v.sport.toLowerCase() === targetSport) ||
-                                     (v.category && v.category.toLowerCase() === targetSport) ||
-                                     (Array.isArray(v.sports) && v.sports.some(s => s && s.toLowerCase() === targetSport));
-                      if (!sMatch) return false;
-                    }
-                    if (searchQuery.trim()) {
-                      const q = searchQuery.toLowerCase().trim();
-                      const titleMatch = (v.title && v.title.toLowerCase().includes(q)) ||
-                                         (v.venue && v.venue.toLowerCase().includes(q)) ||
-                                         (v.name && v.name.toLowerCase().includes(q));
-                      const sportMatch = (v.sport && v.sport.toLowerCase().includes(q)) ||
-                                         (v.category && v.category.toLowerCase().includes(q)) ||
-                                         (Array.isArray(v.sports) && v.sports.some(s => s && s.toLowerCase() === q));
-                      const addrMatch = (v.address && v.address.toLowerCase().includes(q)) ||
-                                        (v.location && v.location.toLowerCase().includes(q));
-                      if (!titleMatch && !sportMatch && !addrMatch) return false;
-                    }
-                    return true;
-                  })
-                  .sort((a, b) => (a.isNew && !b.isNew ? -1 : !a.isNew && b.isNew ? 1 : 0))
-                  .map(v => {
-                  const matches = venueOffers.filter(o => o.venueId === v.id);
-                  const bookingOffers = matches.filter(o => o.type === 'booking');
-                  const membershipPackages = matches.filter(o => o.type === 'membership');
+                  <div className="flex items-center space-x-2 bg-[#0a0a0a] p-1.5 rounded-full border border-white/10 self-start sm:self-auto overflow-x-auto no-scrollbar">
+                    <span className="text-[10px] text-neutral-400 uppercase font-bold pl-3 pr-1">Max Distance:</span>
+                    {[5, 10, 20, 30, 50].map(r => (
+                      <button
+                        key={r}
+                        onClick={() => setRadiusKm(r)}
+                        className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                          radiusKm === r
+                            ? 'bg-indigo-600 text-white font-black shadow-md'
+                            : 'text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        {r} km
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                  return (
-                    <div key={v.id} className="glass-card overflow-hidden border border-white/5 flex flex-col justify-between">
-                      <div>
-                        {v.image && (
-                          <div className="w-full h-44 overflow-hidden relative bg-neutral-900 border-b border-white/5 flex-shrink-0">
-                            <img src={v.image} alt={v.venue} className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
-                            <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
-                              <span className="bg-black/60 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-extrabold text-white border border-white/10 flex items-center gap-1">
-                                <SportIcon sport={v.sport} size={12} className="text-white" />
-                                {v.sport}
-                              </span>
-                              {v.isNew && (
-                                <span className="bg-emerald-500 text-black px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-lg flex items-center gap-1 animate-pulse">
-                                  ✨ NEW
+                {playersLoading ? (
+                  <div className="glass-card p-12 text-center border border-white/5 flex items-center justify-center space-x-3 text-indigo-400">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    <span className="text-sm font-bold">Searching for registered players...</span>
+                  </div>
+                ) : dbPlayersList.length === 0 ? (
+                  <div className="glass-card p-12 text-center border border-dashed border-white/10 space-y-3">
+                    <Users className="w-10 h-10 text-neutral-600 mx-auto" />
+                    <h3 className="text-white font-bold text-base">No users found</h3>
+                    <p className="text-neutral-500 text-xs max-w-md mx-auto">
+                      No matching registered player profiles found. Try searching by their Player ID (e.g. @handle) or name.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {dbPlayersList.map((player) => {
+                      const isFollowing = followedPlayers.includes(player.id);
+                      const displayPlayerId = player.player_id || player.handle || (player.username ? (player.username.startsWith('@') ? player.username : `@${player.username}`) : `@athlete_${String(player.id).slice(-4)}`);
+                      return (
+                        <div
+                          key={player.id}
+                          onClick={() => setSelectedPlayerModal(player)}
+                          className="glass-card p-5 border border-white/5 hover:border-indigo-500/30 transition-all duration-300 cursor-pointer flex flex-col justify-between group"
+                        >
+                          <div className="space-y-4">
+                            <div className="flex items-center space-x-3.5">
+                              <img
+                                src={player.avatar_url || player.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.id}`}
+                                alt={player.full_name || player.name}
+                                className="w-13 h-13 rounded-full object-cover border-2 border-indigo-500/30 group-hover:border-indigo-400 transition-colors"
+                              />
+                              <div className="text-left overflow-hidden">
+                                <h3 className="font-bold text-white text-base truncate group-hover:text-indigo-400 transition-colors">
+                                  {player.full_name || player.name || 'Sports Player'}
+                                </h3>
+                                <p className="text-xs text-indigo-300 font-mono font-bold truncate">
+                                  {displayPlayerId}
+                                </p>
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border mt-1 inline-block ${
+                                  player.role === 'owner' ? 'bg-amber-500/10 text-amber-300 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                                }`}>
+                                  {player.role === 'owner' ? '🏟️ Venue Owner' : '🏃 Player'}
                                 </span>
-                              )}
+                              </div>
                             </div>
-                            <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-black text-white border border-white/10">
-                              {v.price}
+
+                            <div className="flex items-center justify-between text-xs pt-3 border-t border-white/5 text-neutral-400">
+                              <span className="flex items-center gap-1 text-emerald-400 font-extrabold">
+                                <MapPin className="w-3.5 h-3.5" />
+                                {player.distanceText || 'Nearby'}
+                              </span>
+                              <span>{player.city || player.location || 'Chennai'}</span>
                             </div>
                           </div>
-                        )}
-                        
-                        <div className="p-5 space-y-3">
-                           <div className="text-left">
-                             <h4 className="font-bold text-white font-display text-base">{v.venue}</h4>
-                             <p className="text-xs text-neutral-400 mt-1 flex items-center gap-1.5">
-                               <MapPin className="w-3.5 h-3.5 text-neutral-500" />
-                               <span>{v.distance} away</span>
-                             </p>
 
-                             {(bookingOffers.length > 0 || membershipPackages.length > 0) && (
-                               <div className="flex flex-wrap gap-1.5 mt-3">
-                                 {bookingOffers.map(o => (
-                                   <span key={o.id} className="text-[9px] text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded border border-indigo-500/20 font-black uppercase tracking-wider flex items-center gap-1">
-                                     🎟️ Offer: {o.discount}
-                                   </span>
-                                 ))}
-                                 {membershipPackages.map(o => (
-                                   <span key={o.id} className="text-[9px] text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20 font-black uppercase tracking-wider flex items-center gap-1">
-                                     💎 Pass: {o.title}
-                                   </span>
-                                 ))}
-                               </div>
-                             )}
+                          <div className="mt-4 pt-3 flex items-center space-x-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFollow(player.id);
+                              }}
+                              className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
+                                isFollowing
+                                  ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-rose-500/15 hover:text-rose-400 hover:border-rose-500/30'
+                                  : 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent shadow-md shadow-indigo-600/30'
+                              }`}
+                            >
+                              {isFollowing ? <UserCheck className="w-3.5 h-3.5 text-indigo-400" /> : <UserPlus className="w-3.5 h-3.5" />}
+                              <span>{isFollowing ? 'Following' : '+ Follow'}</span>
+                            </button>
 
-                             <div className="flex items-center space-x-2 mt-3">
-                               <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/15 font-bold uppercase tracking-wider">Active slots available</span>
-                             </div>
-                           </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onStartChat) {
+                                  onStartChat(player);
+                                } else if (setTab) {
+                                  try {
+                                    localStorage.setItem('turfington_target_chat_user', JSON.stringify(player));
+                                  } catch {}
+                                  setTab('community');
+                                }
+                              }}
+                              className="px-3.5 py-2 text-xs font-bold rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                              title="Message & Chat"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>Message</span>
+                            </button>
+                          </div>
                         </div>
-                      </div>
-
-                      <div className="p-5 pt-0">
-                         {user?.role === 'owner' ? (
-                           <div className="text-[10px] text-center text-neutral-500 font-semibold border border-white/5 rounded-xl py-2 bg-white/[0.01]">
-                             View Only Mode
-                           </div>
-                         ) : (() => {
-                           const activeB = findTurfBooking(v);
-                           return activeB ? (
-                             <div className="space-y-2">
-                               <div className="flex items-center gap-2">
-                                 <div className="flex-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 py-2.5 px-3 rounded-full flex items-center justify-center gap-1.5 shadow-sm text-xs font-black uppercase tracking-wider select-none">
-                                   <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                                   <span>BOOKED</span>
-                                 </div>
-                                 <button
-                                   onClick={() => setSelectedSlotTurf(v)}
-                                   className="flex-1 text-xs font-black uppercase tracking-wider bg-[#5842fe] hover:bg-[#4832ee] text-white py-2.5 px-3 rounded-full transition-all flex items-center justify-center space-x-1 cursor-pointer shadow-[0_0_15px_rgba(88,66,254,0.35)] hover:scale-[1.02]"
-                                 >
-                                   <Clock className="w-3.5 h-3.5" />
-                                   <span>Book More</span>
-                                 </button>
-                               </div>
-                               <div className="flex justify-between items-center px-1 text-[11px] pt-0.5">
-                                 <span className="text-neutral-400 truncate max-w-[170px]">
-                                   {formatTime12Hour(activeB.time || activeB.slot_time || 'Reserved')}
-                                 </span>
-                                 <button
-                                   onClick={() => handleCancelUserBooking(activeB, v)}
-                                   className="text-neutral-400 hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer font-semibold flex-shrink-0"
-                                 >
-                                   <XCircle className="w-3 h-3 text-rose-400" />
-                                   <span>Cancel</span>
-                                 </button>
-                               </div>
-                             </div>
-                           ) : (
-                             <div className="flex space-x-2">
-                               <button 
-                                 onClick={() => setSelectedSlotTurf(v)}
-                                 className="flex-grow text-xs font-bold bg-white text-black py-2.5 rounded-full hover:bg-neutral-200 transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
-                               >
-                                 <Clock className="w-3.5 h-3.5 text-black" />
-                                 <span>Select Slot & Book</span>
-                               </button>
-
-                               {(bookingOffers.length > 0 || membershipPackages.length > 0) && (
-                                 <button 
-                                   onClick={() => setSelectedDealsVenue(v)}
-                                   className="px-3.5 py-2.5 text-xs font-bold bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-full flex items-center justify-center space-x-1.5 transition-all"
-                                 >
-                                   <span>Deals</span>
-                                 </button>
-                               )}
-                             </div>
-                           );
-                         })()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* TABS CONTENT: Events */}
-            {activeTab === 'Events' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[
-                  { id: 901, title: 'Turfington Summer Football Cup', venue: 'Vanguard Sports Arena', date: 'June 15, 2026', sport: 'Football', price: '₹400/team', image: '/trophy.png', slots: '2 slots left', status: 'Registration Open' },
-                  { id: 902, title: 'Smash Masters Badminton Doubles', venue: 'Smash Club Badminton', date: 'June 22, 2026', sport: 'Badminton', price: '₹200/team', image: '/smash_club_badminton.jpg', slots: '5 slots left', status: 'Registration Open' }
-                ].map(ev => (
-                  <div key={ev.id} className="glass-card overflow-hidden border border-white/5 flex flex-col justify-between">
-                    <div>
-                      <div className="w-full h-44 overflow-hidden relative bg-neutral-900 border-b border-white/5 flex-shrink-0">
-                        <img src={ev.image} alt={ev.title} className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
-                        <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-extrabold text-white border border-white/10 flex items-center gap-1">
-                          <SportIcon sport={ev.sport} size={12} className="text-white" />
-                          {ev.sport}
-                        </div>
-                        <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-black text-white border border-white/10">
-                          {ev.price}
-                        </div>
-                      </div>
-                      
-                      <div className="p-5 space-y-3 text-left">
-                         <h4 className="font-bold text-white font-display text-base">{ev.title}</h4>
-                         <p className="text-xs text-neutral-400 mt-1 flex items-center gap-1.5">
-                           <MapPin className="w-3.5 h-3.5 text-neutral-500" />
-                           <span>{ev.venue}</span>
-                         </p>
-                         <p className="text-xs text-neutral-400 mt-1 flex items-center gap-1.5">
-                           <Clock className="w-3.5 h-3.5 text-neutral-500" />
-                           <span>{ev.date}</span>
-                         </p>
-                         <div className="flex items-center space-x-2 mt-3">
-                           <span className="text-[10px] text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded border border-indigo-500/15 font-bold uppercase tracking-wider">{ev.slots}</span>
-                         </div>
-                      </div>
-                    </div>
-
-                    <div className="p-5 pt-0">
-                       <button 
-                         onClick={() => toast.success(`Registration details for ${ev.title} sent to your email!`, 'Registration Successful')}
-                         className="w-full text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-full transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
-                       >
-                         <span>Register Team</span>
-                       </button>
-                    </div>
+                      );
+                    })}
                   </div>
-                ))}
+                )}
               </div>
             )}
 
