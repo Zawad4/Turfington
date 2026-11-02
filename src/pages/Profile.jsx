@@ -25,6 +25,8 @@ import {
   Hash
 } from 'lucide-react';
 import { apiUpdateProfile, apiFetchPlayerReviews, getRatingColor } from '../services/db';
+import { getFollowCounts, getLocalFollowing, getLocalFollowers } from '../services/followService';
+import { calculateCompletedMatches } from '../utils/formatters';
 import { useToast } from '../context';
 import { auth } from '../services/firebase';
 import UserAvatar from '../components/UserAvatar';
@@ -209,9 +211,28 @@ function PfpCropModal({ imageSrc, onClose, onConfirm }) {
   );
 }
 
+function loadUserBookings(userId) {
+  try {
+    const sU = userId ? localStorage.getItem(`turfington_user_bookings_${userId}`) : null;
+    if (sU) {
+      const parsed = JSON.parse(sU);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    const s1 = localStorage.getItem('turfington_user_bookings');
+    if (s1) {
+      const parsed = JSON.parse(s1);
+      if (Array.isArray(parsed)) {
+        return userId ? parsed.filter(b => b.user_id === userId || b.userId === userId) : parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
+
 export default function Profile({ 
   user, 
   role, 
+  bookings,
   onLogout, 
   onSwitchRole, 
   onOpenProfileSwitcher,
@@ -252,6 +273,63 @@ export default function Profile({
     reviews: []
   });
   const [showReviewsModal, setShowReviewsModal] = useState(false);
+
+  const currentUserId = user?.id || user?.uid || user?.firebase_uid;
+
+  // Real-time Follow Counts (Followers & Following)
+  const [followCounts, setFollowCounts] = useState(() => ({
+    followingCount: getLocalFollowing(currentUserId).length,
+    followersCount: getLocalFollowers(currentUserId).length
+  }));
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const refreshFollow = () => {
+      setFollowCounts({
+        followingCount: getLocalFollowing(currentUserId).length,
+        followersCount: getLocalFollowers(currentUserId).length
+      });
+      getFollowCounts(currentUserId).then(counts => {
+        if (counts) setFollowCounts(counts);
+      });
+    };
+
+    refreshFollow();
+    window.addEventListener('turfington_follow_change', refreshFollow);
+    return () => window.removeEventListener('turfington_follow_change', refreshFollow);
+  }, [currentUserId]);
+
+  // Real-time Matches Count from Slot Bookings
+  // Only completed slots (where slot end time has passed) count towards Matches (+1).
+  // Cancelled or rejected slots are excluded (-1).
+  const [completedMatchesCount, setCompletedMatchesCount] = useState(() => {
+    const local = loadUserBookings(currentUserId);
+    const initialBookings = (bookings && bookings.length > 0) ? bookings : local;
+    return calculateCompletedMatches(initialBookings);
+  });
+
+  useEffect(() => {
+    const updateMatches = () => {
+      const local = loadUserBookings(currentUserId);
+      const allBookings = (bookings && bookings.length > 0) ? bookings : local;
+      setCompletedMatchesCount(calculateCompletedMatches(allBookings));
+    };
+
+    updateMatches();
+
+    // Check periodically so when a slot end time passes (e.g. 5:00 PM), it dynamically counts +1
+    const interval = setInterval(updateMatches, 15000);
+    window.addEventListener('storage', updateMatches);
+    window.addEventListener('turfington_booking_updated', updateMatches);
+    window.addEventListener('turfington_bookings_updated', updateMatches);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', updateMatches);
+      window.removeEventListener('turfington_booking_updated', updateMatches);
+      window.removeEventListener('turfington_bookings_updated', updateMatches);
+    };
+  }, [currentUserId, bookings]);
 
   useEffect(() => {
     const targetPlayerId = user?.id || user?.firebase_uid || user?.email || 'usr_me';
@@ -378,18 +456,17 @@ export default function Profile({
     }
   };
 
-  // Profile data
-  const baseStats = Array.isArray(user?.stats) ? user.stats : (role === 'owner' ? [
-    { name: 'Hosted Events', value: '0' },
-    { name: 'Followers', value: '0' },
-    { name: 'Following', value: '0' },
-    { name: 'Rating', value: '5.0' }
+  // Dynamic profile statistics
+  const userStats = role === 'owner' ? [
+    { name: 'Hosted Events', value: String(completedMatchesCount) },
+    { name: 'Followers', value: String(followCounts.followersCount) },
+    { name: 'Following', value: String(followCounts.followingCount) },
+    { name: 'Rating', value: ratingScore }
   ] : [
-    { name: 'Matches', value: '0' },
-    { name: 'Followers', value: '0' },
-    { name: 'Following', value: '0' }
-  ]);
-  const userStats = baseStats.filter(s => s && s.name !== 'Win Rate');
+    { name: 'Matches', value: String(completedMatchesCount) },
+    { name: 'Followers', value: String(followCounts.followersCount) },
+    { name: 'Following', value: String(followCounts.followingCount) }
+  ];
 
   const rawInterests = (Array.isArray(user?.sports_interests) && user.sports_interests.length > 0)
     ? user.sports_interests

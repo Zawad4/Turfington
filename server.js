@@ -566,7 +566,8 @@ const INITIAL_DATA = {
   ],
   posts: [],
   marketplace: [],
-  player_reviews: []
+  player_reviews: [],
+  follows: []
 };
 
 let dbCache = null;
@@ -596,6 +597,7 @@ function readDB() {
     if (!parsed.friend_requests) parsed.friend_requests = [];
     if (!parsed.chats) parsed.chats = [];
     if (!parsed.player_reviews) parsed.player_reviews = [];
+    if (!parsed.follows) parsed.follows = [];
     dbCache = parsed;
     lastReadTime = now;
     return parsed;
@@ -1151,6 +1153,60 @@ app.post('/api/friends/respond', (req, res) => {
 
   writeDB(db);
   res.json({ success: true, status, directChatId });
+});
+
+// 10.5 Follow / Unfollow & Follow Counts API
+app.get('/api/users/:userId/follow-counts', (req, res) => {
+  const { userId } = req.params;
+  const db = readDB();
+  const follows = db.follows || [];
+  const followers = follows.filter(f => f.following_id === userId).map(f => f.follower_id);
+  const following = follows.filter(f => f.follower_id === userId).map(f => f.following_id);
+  res.json({
+    success: true,
+    userId,
+    followersCount: followers.length,
+    followingCount: following.length,
+    followerIds: followers,
+    followingIds: following
+  });
+});
+
+app.post('/api/users/:userId/follow', (req, res) => {
+  const { userId } = req.params;
+  const { followerId } = req.body;
+  if (!followerId || !userId) {
+    return res.status(400).json({ success: false, error: 'followerId and userId required' });
+  }
+  const db = readDB();
+  db.follows = db.follows || [];
+  const exists = db.follows.some(f => f.follower_id === followerId && f.following_id === userId);
+  if (!exists) {
+    db.follows.push({
+      follower_id: followerId,
+      following_id: userId,
+      created_at: new Date().toISOString()
+    });
+    writeDB(db);
+  }
+  const followersCount = db.follows.filter(f => f.following_id === userId).length;
+  const followingCount = db.follows.filter(f => f.follower_id === followerId).length;
+  res.json({ success: true, isFollowing: true, followersCount, followingCount });
+});
+
+app.post('/api/users/:userId/unfollow', (req, res) => {
+  const { userId } = req.params;
+  const { followerId } = req.body;
+  if (!followerId || !userId) {
+    return res.status(400).json({ success: false, error: 'followerId and userId required' });
+  }
+  const db = readDB();
+  db.follows = db.follows || [];
+  db.follows = db.follows.filter(f => !(f.follower_id === followerId && f.following_id === userId));
+  writeDB(db);
+  const followersCount = db.follows.filter(f => f.following_id === userId).length;
+  const followingCount = db.follows.filter(f => f.follower_id === followerId).length;
+  res.json({ success: true, isFollowing: false, followersCount, followingCount });
 });
 
 // 11. Chats & Direct Messaging API

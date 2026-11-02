@@ -371,6 +371,9 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
     setBookings(updated);
     if (setAppBookings) setAppBookings(updated);
     await apiUpdateBookingStatus(cancelTarget.id, 'cancelled', 'Cancelled by player');
+    window.dispatchEvent(new CustomEvent('turfington_booking_updated', {
+      detail: { bookingId: cancelTarget.id, status: 'cancelled' }
+    }));
     setShowCancelModal(false);
     setCancelTarget(null);
   };

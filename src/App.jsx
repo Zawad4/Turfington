@@ -480,6 +480,7 @@ export default function App() {
               <Profile
                 user={user}
                 role={user?.role}
+                bookings={bookings}
                 onLogout={logout}
                 onOpenProfileSwitcher={() => setShowProfileSwitcher(true)}
                 onUpdateUser={updateUser}

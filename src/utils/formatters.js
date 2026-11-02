@@ -72,3 +72,110 @@ export function formatTime12Hour(timeStr) {
   });
 }
 
+/**
+ * Determines if a turf slot match has completed.
+ * Rule:
+ * 1. Cancelled or rejected bookings are NEVER completed (count -1).
+ * 2. Bookings in the past days are completed.
+ * 3. Bookings in future days are not yet completed.
+ * 4. For bookings today, they are ONLY completed after the slot end time has passed
+ *    (e.g., booked for 4pm to 5pm -> only after 5:00 PM does it count +1).
+ */
+export function isSlotMatchCompleted(booking, now = new Date()) {
+  if (!booking) return false;
+  const status = String(booking.status || '').toLowerCase();
+  if (status.includes('cancel') || status.includes('reject')) return false;
+
+  const rawDate = String(booking.date || '').trim();
+  const rawTime = String(booking.time || booking.slot_time || '').trim();
+
+  let targetYear = now.getFullYear();
+  let targetMonth = now.getMonth();
+  let targetDay = now.getDate();
+
+  const lowerDate = rawDate.toLowerCase();
+  if (lowerDate.includes('today')) {
+    // is today
+  } else if (lowerDate.includes('yesterday')) {
+    return true;
+  } else if (lowerDate.includes('tomorrow')) {
+    return false;
+  } else if (rawDate) {
+    const cleanDateStr = rawDate.replace(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\s*/i, '');
+    let parsedDate = new Date(cleanDateStr);
+    if (isNaN(parsedDate.getTime())) {
+      parsedDate = new Date(`${cleanDateStr} ${targetYear}`);
+    }
+
+    if (!isNaN(parsedDate.getTime())) {
+      targetYear = parsedDate.getFullYear();
+      targetMonth = parsedDate.getMonth();
+      targetDay = parsedDate.getDate();
+
+      const bookingDayStart = new Date(targetYear, targetMonth, targetDay, 0, 0, 0);
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+
+      if (bookingDayStart.getTime() < todayStart.getTime()) return true;
+      if (bookingDayStart.getTime() > todayStart.getTime()) return false;
+    }
+  }
+
+  // End time parsing (e.g. "4:00 PM - 5:00 PM", "4pm to 5pm", "16:00 - 17:00", "16:00")
+  const rangeParts = rawTime.split(/[-–]|(?:\s+to\s+)/i);
+  let endTimeStr = '';
+  const isRange = rangeParts.length >= 2;
+  if (isRange) {
+    endTimeStr = rangeParts[rangeParts.length - 1].trim();
+  } else {
+    endTimeStr = rangeParts[0].trim();
+  }
+
+  let endHour = 0;
+  let endMinute = 0;
+  let hasValidEndTime = false;
+
+  const match12 = endTimeStr.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (match12) {
+    let h = parseInt(match12[1], 10);
+    const m = match12[2] ? parseInt(match12[2], 10) : 0;
+    const isPm = match12[3].toLowerCase() === 'pm';
+    if (isPm && h < 12) h += 12;
+    if (!isPm && h === 12) h = 0;
+    if (!isRange) h += 1; // standard turf booking duration is 1 hour
+    endHour = h;
+    endMinute = m;
+    hasValidEndTime = true;
+  } else {
+    const match24 = endTimeStr.match(/\b([01]?\d|2[0-3])(?::([0-5]\d))?\b/);
+    if (match24) {
+      let h = parseInt(match24[1], 10);
+      const m = match24[2] ? parseInt(match24[2], 10) : 0;
+      if (!isRange) h += 1;
+      endHour = h;
+      endMinute = m;
+      hasValidEndTime = true;
+    }
+  }
+
+  if (hasValidEndTime) {
+    const slotEndDateTime = new Date(targetYear, targetMonth, targetDay, endHour, endMinute, 0);
+    return now.getTime() >= slotEndDateTime.getTime();
+  }
+
+  // If time could not be parsed, check created_at: if older than 1 hour ago
+  if (booking.created_at || booking.createdAt) {
+    const c = new Date(booking.created_at || booking.createdAt);
+    return !isNaN(c.getTime()) && (now.getTime() - c.getTime() > 3600 * 1000);
+  }
+
+  return false;
+}
+
+/**
+ * Calculates completed matches from a list of user bookings.
+ */
+export function calculateCompletedMatches(bookings, now = new Date()) {
+  if (!Array.isArray(bookings)) return 0;
+  return bookings.filter(b => isSlotMatchCompleted(b, now)).length;
+}
+

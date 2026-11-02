@@ -26,6 +26,7 @@ import {
   SYSTEM_DEFAULT_GROUP_IDS
 } from '../services/chatService';
 import { apiFetchAthletes, apiSearchUsers, apiFollowUser, NPC_TEST_USER_IDS } from '../services/db';
+import { getLocalFollowing, toggleFollowUser } from '../services/followService';
 import { auth, setupPushNotifications } from '../services/firebase';
 
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
@@ -126,15 +127,20 @@ export default function Community({ user, setTab }) {
   const [athletes, setAthletes] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Friends & Live Search States
+  // Follow / Friends & Live Search States
   const [followedAthletes, setFollowedAthletes] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`turfington_friends_${currentUserId}`) || '[]');
-    } catch {
-      return [];
-    }
+    return getLocalFollowing(currentUserId);
   });
   const followedAthletesSet = useMemo(() => new Set(followedAthletes), [followedAthletes]);
+
+  useEffect(() => {
+    setFollowedAthletes(getLocalFollowing(currentUserId));
+    const handleFollowChange = () => {
+      setFollowedAthletes(getLocalFollowing(currentUserId));
+    };
+    window.addEventListener('turfington_follow_change', handleFollowChange);
+    return () => window.removeEventListener('turfington_follow_change', handleFollowChange);
+  }, [currentUserId]);
   const [dynamicSearchResults, setDynamicSearchResults] = useState([]);
   const [modalDynamicResults, setModalDynamicResults] = useState([]);
 
@@ -188,16 +194,12 @@ export default function Community({ user, setTab }) {
   // Push notifications
   const [notificationEnabled, setNotificationEnabled] = useState(false);
 
-  // Friend toggle handler
+  // Follow toggle handler
   const handleToggleFriend = async (e, athleteId) => {
     if (e && e.stopPropagation) e.stopPropagation();
-    const isFollowing = followedAthletes.includes(athleteId);
-    const updated = isFollowing ? followedAthletes.filter(id => id !== athleteId) : [...followedAthletes, athleteId];
-    setFollowedAthletes(updated);
-    try {
-      localStorage.setItem(`turfington_friends_${currentUserId}`, JSON.stringify(updated));
-    } catch {}
-    await apiFollowUser(currentUserId, athleteId);
+    if (!currentUserId || !athleteId) return;
+    await toggleFollowUser(currentUserId, athleteId);
+    setFollowedAthletes(getLocalFollowing(currentUserId));
   };
 
   // Check if routed from Discovery to start a direct chat
@@ -1207,14 +1209,14 @@ export default function Community({ user, setTab }) {
                               <button
                                 type="button"
                                 onClick={(e) => handleToggleFriend(e, athlete.id)}
-                                className={`px-2 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                className={`px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                                   isFriend
-                                    ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-white/5 text-neutral-300 hover:bg-white/10 hover:text-white border border-white/10'
+                                    ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-rose-500/15 hover:text-rose-400 hover:border-rose-500/30'
+                                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
                                 }`}
                               >
-                                {isFriend ? <UserCheck className="w-2.5 h-2.5" /> : <UserPlus className="w-2.5 h-2.5" />}
-                                <span>{isFriend ? 'Friends' : 'Add Friend+'}</span>
+                                {isFriend ? <UserCheck className="w-2.5 h-2.5 text-indigo-400" /> : <UserPlus className="w-2.5 h-2.5" />}
+                                <span>{isFriend ? 'Following' : '+ Follow'}</span>
                               </button>
                               <button
                                 type="button"
@@ -1448,19 +1450,19 @@ export default function Community({ user, setTab }) {
                             onClick={(e) => handleToggleFriend(e, athlete.id)}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                               isFriend
-                                ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30'
-                                : 'bg-white/5 text-neutral-300 hover:bg-white/10 hover:text-white border border-white/10'
+                                ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-rose-500/15 hover:text-rose-400 hover:border-rose-500/30'
+                                : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30'
                             }`}
                           >
                             {isFriend ? (
                               <>
-                                <UserCheck className="w-3 h-3" />
-                                <span>Friends</span>
+                                <UserCheck className="w-3 h-3 text-indigo-400" />
+                                <span>Following</span>
                               </>
                             ) : (
                               <>
                                 <UserPlus className="w-3 h-3" />
-                                <span>Add Friend+</span>
+                                <span>+ Follow</span>
                               </>
                             )}
                           </button>

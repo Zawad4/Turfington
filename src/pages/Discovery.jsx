@@ -14,6 +14,7 @@ import { openRazorpayCheckout } from '../services/razorpay';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import { useToast } from '../context';
 import { formatTime12Hour } from '../utils/formatters';
+import { getLocalFollowing, toggleFollowUser } from '../services/followService';
 
 /* ── Sport Capacity Presets & Rules ──────────────────────── */
 export const SPORT_CAPACITY_PRESETS = [
@@ -414,15 +415,24 @@ export default function Discovery({
   const [dbPlayersList, setDbPlayersList] = useState([]);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [selectedPlayerModal, setSelectedPlayerModal] = useState(null);
-  const [followedPlayers, setFollowedPlayers] = useState([]);
+  const currentUserId = user?.id || user?.uid || user?.firebase_uid;
+  const [followedPlayers, setFollowedPlayers] = useState(() => {
+    return getLocalFollowing(currentUserId);
+  });
+
+  useEffect(() => {
+    setFollowedPlayers(getLocalFollowing(currentUserId));
+    const handleFollowChange = () => {
+      setFollowedPlayers(getLocalFollowing(currentUserId));
+    };
+    window.addEventListener('turfington_follow_change', handleFollowChange);
+    return () => window.removeEventListener('turfington_follow_change', handleFollowChange);
+  }, [currentUserId]);
 
   const toggleFollow = async (id) => {
-    setFollowedPlayers(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-    if (user?.id) {
-      await apiFollowUser(user.id, id);
-    }
+    if (!currentUserId || !id) return;
+    await toggleFollowUser(currentUserId, id);
+    setFollowedPlayers(getLocalFollowing(currentUserId));
   };
 
   // Fetch dynamic player profiles from Firebase Database on load or GPS/radius change
@@ -742,6 +752,9 @@ export default function Discovery({
     });
 
     setLocalBookings(prev => [newBooking, ...(prev || []).filter(b => b.id !== newBooking.id)]);
+    window.dispatchEvent(new CustomEvent('turfington_booking_updated', {
+      detail: { booking: newBooking, status: 'confirmed' }
+    }));
 
     setTimeout(() => {
       setIsPaying(false);
@@ -1346,12 +1359,12 @@ export default function Discovery({
                               }}
                               className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
                                 isFollowing
-                                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
-                                  : 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent'
+                                  ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-rose-500/15 hover:text-rose-400 hover:border-rose-500/30'
+                                  : 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent shadow-md shadow-indigo-600/30'
                               }`}
                             >
-                              {isFollowing ? <UserCheck className="w-3.5 h-3.5 text-emerald-400" /> : <UserPlus className="w-3.5 h-3.5" />}
-                              <span>{isFollowing ? 'Friends' : 'Add Friend+'}</span>
+                              {isFollowing ? <UserCheck className="w-3.5 h-3.5 text-indigo-400" /> : <UserPlus className="w-3.5 h-3.5" />}
+                              <span>{isFollowing ? 'Following' : '+ Follow'}</span>
                             </button>
 
                             <button
@@ -2500,19 +2513,19 @@ export default function Discovery({
                     }}
                     className={`py-2.5 px-5 text-xs font-bold rounded-xl border transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
                       followedPlayers.includes(selectedPlayerModal.id)
-                        ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-white text-black border-transparent hover:bg-neutral-200'
+                        ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-rose-500/15 hover:text-rose-400 hover:border-rose-500/30'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent shadow-md shadow-indigo-600/30'
                     }`}
                   >
                     {followedPlayers.includes(selectedPlayerModal.id) ? (
                       <>
-                        <UserCheck className="w-4 h-4 text-emerald-400" />
-                        <span>Friends</span>
+                        <UserCheck className="w-4 h-4 text-indigo-400" />
+                        <span>Following</span>
                       </>
                     ) : (
                       <>
                         <UserPlus className="w-4 h-4" />
-                        <span>Add Friend+</span>
+                        <span>+ Follow</span>
                       </>
                     )}
                   </button>
