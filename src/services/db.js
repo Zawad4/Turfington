@@ -2450,8 +2450,15 @@ export async function apiFetchTurfs() {
       ? t.sports 
       : [t.sport || t.category || 'Sports'];
 
+    let vSlots = t.slots;
+    try {
+      const savedS = localStorage.getItem('turfington_venue_slots_' + (t.id || key));
+      if (savedS) vSlots = JSON.parse(savedS);
+    } catch {}
+
     map.set(key, {
       ...t,
+      slots: vSlots,
       id: t.id || key,
       name: t.name || 'Sports Arena',
       venue: t.name || 'Sports Arena',

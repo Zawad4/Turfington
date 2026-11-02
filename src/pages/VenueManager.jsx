@@ -719,15 +719,31 @@ function AddVenueModal({ onClose, onAdd }) {
 }
 
 /* ─── Slot Grid ──────────────────────────────────────── */
-/* ─── Slot Grid ──────────────────────────────────────── */
-function SlotGrid({ venue, onUpdateSlot }) {
-  const [selectedDay, setSelectedDay] = useState('Mon');
+function SlotGrid({ venue, onUpdateSlot, onBatchUpdateSlots }) {
+  const { toast } = useToast();
+  const [selectedDay, setSelectedDay] = useState('Everyday'); // 'Everyday' | 'Mon' | 'Tue' | ...
   const [timeFilter, setTimeFilter] = useState('all'); // 'all' | 'morning' | 'afternoon' | 'night'
   const [selectedSlotModal, setSelectedSlotModal] = useState(null);
 
+  // Shop / Turf Operating Hours Quick Setup (default 11:00 AM to 09:00 PM)
+  const [openHourStart, setOpenHourStart] = useState('11:00');
+  const [openHourEnd, setOpenHourEnd] = useState('21:00');
+
+  const ALL_DAY_TABS = ['Everyday', ...DAYS];
+
+  const getSlotStatus = (time) => {
+    if (selectedDay === 'Everyday') {
+      const statuses = DAYS.map(d => venue.slots?.[d]?.[time] || 'available');
+      if (statuses.every(s => s === statuses[0])) {
+        return statuses[0];
+      }
+      return venue.slots?.['Mon']?.[time] || 'available';
+    }
+    return venue.slots?.[selectedDay]?.[time] || 'available';
+  };
+
   const toggleSlot = (time) => {
-    const current = venue.slots?.[selectedDay]?.[time] || 'available';
-    // Tap-Tap Cyclic Method: OPEN (available) -> Tap -> BLOCKED -> Tap -> BOOKED -> Tap -> OPEN (available)
+    const current = getSlotStatus(time);
     let next = 'available';
     if (current === 'available' || current === 'open') {
       next = 'blocked';
@@ -736,13 +752,79 @@ function SlotGrid({ venue, onUpdateSlot }) {
     } else {
       next = 'available';
     }
-    onUpdateSlot(venue.id, selectedDay, time, next);
+
+    if (selectedDay === 'Everyday') {
+      if (typeof onBatchUpdateSlots === 'function') {
+        const newSlots = { ...(venue.slots || {}) };
+        DAYS.forEach(d => {
+          newSlots[d] = { ...(newSlots[d] || {}), [time]: next };
+        });
+        onBatchUpdateSlots(venue.id, newSlots);
+      } else {
+        DAYS.forEach(d => {
+          onUpdateSlot(venue.id, d, time, next);
+        });
+      }
+    } else {
+      onUpdateSlot(venue.id, selectedDay, time, next);
+    }
   };
 
   const handleSetAllStatus = (status) => {
-    TIME_SLOTS.forEach(time => {
-      onUpdateSlot(venue.id, selectedDay, time, status);
+    if (selectedDay === 'Everyday') {
+      if (typeof onBatchUpdateSlots === 'function') {
+        const newSlots = { ...(venue.slots || {}) };
+        DAYS.forEach(d => {
+          newSlots[d] = { ...(newSlots[d] || {}), ...(newSlots[d] || {}) };
+          TIME_SLOTS.forEach(time => {
+            newSlots[d][time] = status;
+          });
+        });
+        onBatchUpdateSlots(venue.id, newSlots);
+      } else {
+        DAYS.forEach(d => {
+          TIME_SLOTS.forEach(time => {
+            onUpdateSlot(venue.id, d, time, status);
+          });
+        });
+      }
+    } else {
+      TIME_SLOTS.forEach(time => {
+        onUpdateSlot(venue.id, selectedDay, time, status);
+      });
+    }
+  };
+
+  const handleApplyOperatingHours = () => {
+    const startHour = parseInt(openHourStart.split(':')[0], 10);
+    const endHour = parseInt(openHourEnd.split(':')[0], 10);
+
+    const targetDays = selectedDay === 'Everyday' ? DAYS : [selectedDay];
+    const newSlots = { ...(venue.slots || {}) };
+
+    targetDays.forEach(d => {
+      newSlots[d] = { ...(newSlots[d] || {}) };
+      TIME_SLOTS.forEach(t => {
+        const h = parseInt(t.split(':')[0], 10);
+        // E.g. 11am to 9pm (11:00 to 21:00): slots 11:00 through 20:00 (closing at 21:00)
+        const isWithin = startHour < endHour 
+          ? (h >= startHour && h < endHour) 
+          : (h >= startHour || h < endHour);
+        newSlots[d][t] = isWithin ? 'available' : 'blocked';
+      });
     });
+
+    if (typeof onBatchUpdateSlots === 'function') {
+      onBatchUpdateSlots(venue.id, newSlots);
+    } else {
+      targetDays.forEach(d => {
+        TIME_SLOTS.forEach(t => {
+          onUpdateSlot(venue.id, d, t, newSlots[d][t]);
+        });
+      });
+    }
+
+    toast.success(`✓ Operating hours (${formatTime12Hour(openHourStart)} – ${formatTime12Hour(openHourEnd)}) applied to ${selectedDay === 'Everyday' ? 'Everyday (All 7 Days)' : selectedDay}!`);
   };
 
   const filteredSlots = TIME_SLOTS.filter(t => {
@@ -770,12 +852,12 @@ function SlotGrid({ venue, onUpdateSlot }) {
       {/* Day selector & Batch Action Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1">
-          {DAYS.map(d => (
+          {ALL_DAY_TABS.map(d => (
             <button key={d} onClick={() => setSelectedDay(d)}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-mono font-extrabold uppercase tracking-wider transition-all border ${
-                selectedDay === d ? 'bg-white text-black border-transparent shadow-md' : 'bg-white/5 border-white/10 text-neutral-400 hover:border-white/20'
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-mono font-extrabold uppercase tracking-wider transition-all border cursor-pointer ${
+                selectedDay === d ? 'bg-white text-black border-transparent shadow-md font-black' : 'bg-white/5 border-white/10 text-neutral-400 hover:border-white/20 hover:text-white'
               }`}>
-              {d}
+              {d === 'Everyday' ? 'Everyday' : d}
             </button>
           ))}
         </div>
@@ -787,21 +869,92 @@ function SlotGrid({ venue, onUpdateSlot }) {
             onClick={() => handleSetAllStatus('available')}
             className="text-[10px] font-extrabold uppercase px-3 py-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 transition-all cursor-pointer"
           >
-            ✓ All OPEN
+            ✓ All OPEN {selectedDay === 'Everyday' ? '(All Days)' : ''}
           </button>
           <button
             type="button"
             onClick={() => handleSetAllStatus('blocked')}
             className="text-[10px] font-extrabold uppercase px-3 py-1.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 transition-all cursor-pointer"
           >
-            🚫 Block All
+            🚫 Block All {selectedDay === 'Everyday' ? '(All Days)' : ''}
           </button>
           <button
             type="button"
             onClick={() => handleSetAllStatus('booked')}
             className="text-[10px] font-extrabold uppercase px-3 py-1.5 rounded-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 transition-all cursor-pointer"
           >
-            📌 Book All
+            📌 Book All {selectedDay === 'Everyday' ? '(All Days)' : ''}
+          </button>
+        </div>
+      </div>
+
+      {/* Everyday Mode Indicator Banner */}
+      {selectedDay === 'Everyday' && (
+        <div className="flex items-center justify-between p-3 bg-violet-950/30 border border-violet-500/30 rounded-2xl text-xs">
+          <div className="flex items-center space-x-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-violet-400 animate-pulse" />
+            <span className="font-extrabold text-white text-[11px] uppercase tracking-wider">Everyday Mode Active:</span>
+            <span className="text-neutral-300 text-[11px]">Any slot changed or hours set here will automatically be applied to every day (Mon – Sun).</span>
+          </div>
+        </div>
+      )}
+
+      {/* Operating Hours Quick Setup Bar */}
+      <div className="p-3.5 bg-gradient-to-r from-violet-950/40 to-indigo-950/30 border border-violet-500/25 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-8 h-8 rounded-xl bg-violet-500/20 text-violet-300 border border-violet-500/30 flex items-center justify-center shrink-0">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="font-bold text-white text-xs flex items-center gap-1.5">
+              <span>Operating Hours Preset</span>
+              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                {selectedDay === 'Everyday' ? 'Everyday (Mon – Sun)' : selectedDay}
+              </span>
+            </p>
+            <p className="text-[10px] text-neutral-400 mt-0.5">
+              Select shop / turf open timings (e.g. 11am to 9pm). Slots inside will stay OPEN; slots outside will be BLOCKED.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center space-x-1.5 bg-black/60 border border-white/10 rounded-xl px-2.5 py-1.5">
+            <span className="text-[10px] text-neutral-400 font-mono font-bold uppercase">From</span>
+            <select
+              value={openHourStart}
+              onChange={(e) => setOpenHourStart(e.target.value)}
+              className="bg-transparent text-white font-mono text-xs font-bold outline-none cursor-pointer"
+            >
+              {TIME_SLOTS.map(t => (
+                <option key={t} value={t} className="bg-neutral-900 text-white font-mono">
+                  {formatTime12Hour(t)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center space-x-1.5 bg-black/60 border border-white/10 rounded-xl px-2.5 py-1.5">
+            <span className="text-[10px] text-neutral-400 font-mono font-bold uppercase">To</span>
+            <select
+              value={openHourEnd}
+              onChange={(e) => setOpenHourEnd(e.target.value)}
+              className="bg-transparent text-white font-mono text-xs font-bold outline-none cursor-pointer"
+            >
+              {TIME_SLOTS.map(t => (
+                <option key={t} value={t} className="bg-neutral-900 text-white font-mono">
+                  {formatTime12Hour(t)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleApplyOperatingHours}
+            className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-[11px] uppercase tracking-wider transition-all shadow-lg shadow-violet-600/30 active:scale-95 cursor-pointer whitespace-nowrap"
+          >
+            Apply {selectedDay === 'Everyday' ? 'to Everyday' : `to ${selectedDay}`}
           </button>
         </div>
       </div>
@@ -832,14 +985,16 @@ function SlotGrid({ venue, onUpdateSlot }) {
           <span className="flex items-center space-x-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> <span className="text-emerald-400">Open</span></span>
           <span className="flex items-center space-x-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> <span className="text-amber-400">Blocked</span></span>
           <span className="flex items-center space-x-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> <span className="text-rose-400">Booked</span></span>
-          <span className="text-indigo-400 font-bold bg-indigo-500/10 px-2.5 py-1 rounded-full border border-indigo-500/20">⚡ Tap slot to cycle: OPEN ➔ BLOCKED ➔ BOOKED</span>
+          <span className="text-indigo-400 font-bold bg-indigo-500/10 px-2.5 py-1 rounded-full border border-indigo-500/20">
+            {selectedDay === 'Everyday' ? '⚡ Clicking a slot applies to Everyday' : '⚡ Tap slot to cycle status'}
+          </span>
         </div>
       </div>
 
       {/* Time slots grid */}
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 pt-1">
         {filteredSlots.map(time => {
-          const status = venue.slots?.[selectedDay]?.[time] || 'available';
+          const status = getSlotStatus(time);
           return (
             <div key={time} className="relative group">
               <button
@@ -866,7 +1021,9 @@ function SlotGrid({ venue, onUpdateSlot }) {
               <div className="flex items-center justify-between border-b border-white/8 pb-3">
                 <div>
                   <h3 className="font-display font-black text-white text-base">Manage Slot Status</h3>
-                  <p className="text-xs text-neutral-400 font-mono mt-0.5">{selectedDay}, {formatTime12Hour(selectedSlotModal.time)} • {venue.name}</p>
+                  <p className="text-xs text-neutral-400 font-mono mt-0.5">
+                    {selectedDay === 'Everyday' ? 'Everyday (All 7 Days)' : selectedDay}, {formatTime12Hour(selectedSlotModal.time)} • {venue.name}
+                  </p>
                 </div>
                 <button type="button" onClick={() => setSelectedSlotModal(null)} className="p-1.5 rounded-full bg-white/5 text-neutral-400 hover:text-white">
                   <X className="w-4 h-4" />
@@ -874,13 +1031,27 @@ function SlotGrid({ venue, onUpdateSlot }) {
               </div>
 
               <div className="space-y-2">
-                <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">Select Status for Venue Owner</p>
+                <p className="text-[10px] text-neutral-400 uppercase font-bold tracking-wider">
+                  Select Status {selectedDay === 'Everyday' ? '(Applies to Everyday)' : ''}
+                </p>
                 
                 {/* Option 1: Set OPEN */}
                 <button
                   type="button"
                   onClick={() => {
-                    onUpdateSlot(venue.id, selectedDay, selectedSlotModal.time, 'available');
+                    if (selectedDay === 'Everyday') {
+                      if (typeof onBatchUpdateSlots === 'function') {
+                        const newSlots = { ...(venue.slots || {}) };
+                        DAYS.forEach(d => {
+                          newSlots[d] = { ...(newSlots[d] || {}), [selectedSlotModal.time]: 'available' };
+                        });
+                        onBatchUpdateSlots(venue.id, newSlots);
+                      } else {
+                        DAYS.forEach(d => onUpdateSlot(venue.id, d, selectedSlotModal.time, 'available'));
+                      }
+                    } else {
+                      onUpdateSlot(venue.id, selectedDay, selectedSlotModal.time, 'available');
+                    }
                     setSelectedSlotModal(null);
                   }}
                   className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
@@ -903,7 +1074,19 @@ function SlotGrid({ venue, onUpdateSlot }) {
                 <button
                   type="button"
                   onClick={() => {
-                    onUpdateSlot(venue.id, selectedDay, selectedSlotModal.time, 'blocked');
+                    if (selectedDay === 'Everyday') {
+                      if (typeof onBatchUpdateSlots === 'function') {
+                        const newSlots = { ...(venue.slots || {}) };
+                        DAYS.forEach(d => {
+                          newSlots[d] = { ...(newSlots[d] || {}), [selectedSlotModal.time]: 'blocked' };
+                        });
+                        onBatchUpdateSlots(venue.id, newSlots);
+                      } else {
+                        DAYS.forEach(d => onUpdateSlot(venue.id, d, selectedSlotModal.time, 'blocked'));
+                      }
+                    } else {
+                      onUpdateSlot(venue.id, selectedDay, selectedSlotModal.time, 'blocked');
+                    }
                     setSelectedSlotModal(null);
                   }}
                   className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
@@ -926,7 +1109,19 @@ function SlotGrid({ venue, onUpdateSlot }) {
                 <button
                   type="button"
                   onClick={() => {
-                    onUpdateSlot(venue.id, selectedDay, selectedSlotModal.time, 'booked');
+                    if (selectedDay === 'Everyday') {
+                      if (typeof onBatchUpdateSlots === 'function') {
+                        const newSlots = { ...(venue.slots || {}) };
+                        DAYS.forEach(d => {
+                          newSlots[d] = { ...(newSlots[d] || {}), [selectedSlotModal.time]: 'booked' };
+                        });
+                        onBatchUpdateSlots(venue.id, newSlots);
+                      } else {
+                        DAYS.forEach(d => onUpdateSlot(venue.id, d, selectedSlotModal.time, 'booked'));
+                      }
+                    } else {
+                      onUpdateSlot(venue.id, selectedDay, selectedSlotModal.time, 'booked');
+                    }
                     setSelectedSlotModal(null);
                   }}
                   className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
@@ -1148,7 +1343,7 @@ function ManageOffersModal({ venue, onClose, venueOffers, setVenueOffers }) {
 }
 
 /* ─── Venue Card ─────────────────────────────────────── */
-function VenueCard({ venue, onToggleActive, onUpdateSlot, onDelete, venueOffers, setVenueOffers }) {
+function VenueCard({ venue, onToggleActive, onUpdateSlot, onBatchUpdateSlots, onDelete, venueOffers, setVenueOffers }) {
   const [expanded, setExpanded] = useState(false);
   const [showOffersModal, setShowOffersModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -1332,7 +1527,7 @@ function VenueCard({ venue, onToggleActive, onUpdateSlot, onDelete, venueOffers,
               <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-neutral-400 mb-4">
                 Weekly Slot Availability — {venue.name}
               </h4>
-              <SlotGrid venue={venue} onUpdateSlot={onUpdateSlot} />
+              <SlotGrid venue={venue} onUpdateSlot={onUpdateSlot} onBatchUpdateSlots={onBatchUpdateSlots} />
             </div>
           </motion.div>
         )}
@@ -1491,13 +1686,42 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
     setVenues(prev => prev.map(v => v.id === id ? { ...v, active: !v.active } : v));
   };
 
+  const persistVenueSlots = (venueId, updatedSlots) => {
+    try {
+      localStorage.setItem('turfington_venue_slots_' + venueId, JSON.stringify(updatedSlots));
+      const custStr = localStorage.getItem('turfington_custom_venues');
+      if (custStr) {
+        const cust = JSON.parse(custStr);
+        const updated = cust.map(cv => (String(cv.id) === String(venueId) || cv.name === venueId) ? { ...cv, slots: updatedSlots } : cv);
+        localStorage.setItem('turfington_custom_venues', JSON.stringify(updated));
+      }
+      window.dispatchEvent(new CustomEvent('turfington_venues_updated'));
+    } catch {}
+  };
+
   const handleUpdateSlot = (venueId, day, time, newStatus) => {
     setVenues(prev => prev.map(v => {
       if (v.id !== venueId) return v;
-      const updatedSlots = { ...v.slots, [day]: { ...(v.slots[day] || {}), [time]: newStatus } };
-      try {
-        localStorage.setItem('turfington_venue_slots_' + venueId, JSON.stringify(updatedSlots));
-      } catch {}
+      let updatedSlots = { ...v.slots };
+      if (day === 'Everyday' || day === 'everyday') {
+        DAYS.forEach(d => {
+          updatedSlots[d] = { ...(updatedSlots[d] || {}), [time]: newStatus };
+        });
+      } else {
+        updatedSlots[day] = { ...(updatedSlots[day] || {}), [time]: newStatus };
+      }
+      persistVenueSlots(venueId, updatedSlots);
+      return {
+        ...v,
+        slots: updatedSlots
+      };
+    }));
+  };
+
+  const handleBatchUpdateSlots = (venueId, updatedSlots) => {
+    setVenues(prev => prev.map(v => {
+      if (v.id !== venueId) return v;
+      persistVenueSlots(venueId, updatedSlots);
       return {
         ...v,
         slots: updatedSlots
@@ -1713,6 +1937,7 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
                 venue={venue}
                 onToggleActive={handleToggleActive}
                 onUpdateSlot={handleUpdateSlot}
+                onBatchUpdateSlots={handleBatchUpdateSlots}
                 onDelete={handleDelete}
                 venueOffers={venueOffers}
                 setVenueOffers={setVenueOffers}
