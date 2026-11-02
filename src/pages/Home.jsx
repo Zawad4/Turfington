@@ -638,13 +638,50 @@ export default function Home({
                           <div className="flex items-center space-x-2">
                             <button 
                               onClick={() => {
-                                toast.info(`Contact ${v.name || 'Venue Owner'} directly at ${v.phone || '+91 98765 43210'}.`, 'Venue Contact');
+                                const venueName = v.venue || v.name || 'Sports Venue';
+                                const ownerNameStr = v.ownerName || v.owner_name || `${venueName} Host`;
+                                const ownerId = v.owner_id || v.ownerId || v.owner_uid || `owner_${venueName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+                                const priceStr = v.price || (v.price_per_hr ? `₹${v.price_per_hr}/hr` : '');
+                                const initialMsg = `Hi ${ownerNameStr}! I am reaching out to discuss and have queries about booking slots at ${venueName}${priceStr ? ` (${priceStr})` : ''}.`;
+
+                                const ownerTarget = {
+                                  id: ownerId,
+                                  firebase_uid: ownerId,
+                                  full_name: ownerNameStr,
+                                  name: ownerNameStr,
+                                  displayName: ownerNameStr,
+                                  avatar: v.image || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+                                  avatarUrl: v.image || '',
+                                  role: 'owner',
+                                  venueName: venueName,
+                                  productName: venueName,
+                                  productPrice: priceStr || 'Venue Slot',
+                                  productImage: v.image || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+                                  productCondition: v.location || 'Venue Inquiry',
+                                  initialMessage: initialMsg,
+                                  contextBanner: {
+                                    type: 'venue',
+                                    title: venueName,
+                                    price: priceStr || 'Venue Slot',
+                                    image: v.image || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+                                    subtitle: v.location || 'Venue Inquiry'
+                                  }
+                                };
+
+                                try {
+                                  localStorage.setItem('turfington_target_chat_user', JSON.stringify(ownerTarget));
+                                  window.dispatchEvent(new CustomEvent('turfington_open_direct_chat_target', { detail: ownerTarget }));
+                                } catch {}
+
+                                if (typeof setTab === 'function') {
+                                  setTab('community');
+                                }
                               }}
                               className="text-xs font-bold bg-white/10 hover:bg-white/20 border border-white/10 text-white px-3 py-2 rounded-full transition-colors flex items-center gap-1 cursor-pointer"
-                              title="Contact venue owner directly"
+                              title="Message venue owner directly"
                             >
                               <MessageSquare className="w-3 h-3 text-indigo-400" />
-                              <span>Contact</span>
+                              <span>Contact Owner</span>
                             </button>
                             <button 
                               onClick={() => handleBookVenue(v)}

@@ -124,20 +124,36 @@ export default function Marketplace({
     }
 
     const sellerNameStr = typeof p.sellerName === 'string' && p.sellerName.trim() ? p.sellerName : 'Gear Seller';
-    const sellerId = p.seller_id || p.sellerId || 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
+    const sellerId = p.seller_id || p.sellerId || p.seller_uid || p.sellerUid || 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
+    const priceStr = p.price != null ? `₹${p.price}` : '';
+    const initialMsg = `Hi ${sellerNameStr}! I am interested in buying this product: ${p.name || p.title || 'Sports Gear'}${priceStr ? ` (${priceStr})` : ''}. Is this still available?`;
+
     const sellerTarget = {
       id: sellerId,
       firebase_uid: sellerId,
       full_name: sellerNameStr,
       name: sellerNameStr,
       displayName: sellerNameStr,
-      avatar: p.sellerAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
-      avatarUrl: p.sellerAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
-      role: 'player'
+      avatar: p.sellerAvatar || p.image || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
+      avatarUrl: p.sellerAvatar || p.image || '',
+      role: 'player',
+      productName: p.name || p.title || 'Sports Gear',
+      productPrice: priceStr,
+      productImage: p.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400',
+      productCondition: p.category || p.condition || 'Equipment',
+      initialMessage: initialMsg,
+      contextBanner: {
+        type: 'marketplace',
+        title: p.name || p.title || 'Sports Gear',
+        price: priceStr,
+        image: p.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400',
+        subtitle: p.category || p.condition || 'Equipment'
+      }
     };
 
     try {
       localStorage.setItem('turfington_target_chat_user', JSON.stringify(sellerTarget));
+      window.dispatchEvent(new CustomEvent('turfington_open_direct_chat_target', { detail: sellerTarget }));
     } catch {}
 
     if (typeof setTab === 'function') {

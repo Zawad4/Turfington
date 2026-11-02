@@ -268,6 +268,50 @@ function formatBookingItem(b) {
 }
 
 function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
+  const handleContactOwner = (booking) => {
+    if (!booking) return;
+    const venueName = booking.venue || booking.venue_name || booking.title || 'Sports Arena';
+    const ownerNameStr = booking.owner_name || booking.ownerName || `${venueName} Host`;
+    const ownerId = booking.owner_id || booking.ownerId || booking.venue_owner_id || `owner_${venueName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    const slotTimeStr = booking.time || booking.slot_time || 'Scheduled Slot';
+    const dateStr = booking.date || 'Upcoming Date';
+    const priceStr = booking.price != null ? `₹${booking.price}` : (booking.amount != null ? `₹${booking.amount}` : '');
+
+    const initialMsg = `Hi ${ownerNameStr}! I am reaching out regarding my booking for ${venueName} on ${dateStr} at ${slotTimeStr}${priceStr ? ` (${priceStr})` : ''}. I want to discuss and have queries about my booking.`;
+
+    const ownerTarget = {
+      id: ownerId,
+      firebase_uid: ownerId,
+      full_name: ownerNameStr,
+      name: ownerNameStr,
+      displayName: ownerNameStr,
+      avatar: booking.owner_avatar || booking.ownerAvatar || booking.image || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+      avatarUrl: booking.owner_avatar || booking.ownerAvatar || '',
+      role: 'owner',
+      venueName: venueName,
+      productName: venueName,
+      productPrice: priceStr || 'Booked Slot',
+      productImage: booking.image || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+      productCondition: `${dateStr} • ${slotTimeStr}`,
+      initialMessage: initialMsg,
+      contextBanner: {
+        type: 'venue',
+        title: venueName,
+        price: priceStr || 'Booked Slot',
+        image: booking.image || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=200',
+        subtitle: `${dateStr} • ${slotTimeStr}`
+      }
+    };
+
+    try {
+      localStorage.setItem('turfington_target_chat_user', JSON.stringify(ownerTarget));
+      window.dispatchEvent(new CustomEvent('turfington_open_direct_chat_target', { detail: ownerTarget }));
+    } catch {}
+
+    if (typeof setTab === 'function') {
+      setTab('community');
+    }
+  };
   const [view, setView] = useState('week'); // 'week' | 'month'
   const [bookings, setBookings] = useState(() => {
     try {
@@ -528,7 +572,7 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <button 
                           type="button"
-                          onClick={() => setContactingBooking(b)}
+                          onClick={() => handleContactOwner(b)}
                           className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 text-[10px] font-bold rounded-full transition-all cursor-pointer"
                           title="Chat with venue owner"
                         >
@@ -548,7 +592,7 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <button 
                           type="button"
-                          onClick={() => setContactingBooking(b)}
+                          onClick={() => handleContactOwner(b)}
                           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/35 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-bold rounded-full transition-all cursor-pointer shadow-sm"
                           title="Chat directly with venue owner while pending approval"
                         >
@@ -568,7 +612,7 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <button 
                           type="button"
-                          onClick={() => setContactingBooking(b)}
+                          onClick={() => handleContactOwner(b)}
                           className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 text-[10px] font-bold rounded-full transition-all cursor-pointer"
                           title="Contact owner regarding rejected booking"
                         >

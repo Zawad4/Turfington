@@ -1848,10 +1848,7 @@ export default function Discovery({
                 <div className="flex items-center space-x-2">
                   <button 
                     type="button"
-                    onClick={() => {
-                      const ownerName = selectedSlotTurf.ownerName || selectedSlotTurf.venue || selectedSlotTurf.name || 'Venue Owner';
-                      alert(`Contact ${ownerName} directly at ${selectedSlotTurf.phone || '+91 98765 43210'}.`);
-                    }}
+                    onClick={() => handleContactVenueOwner(selectedSlotTurf, chosenSlot)}
                     className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 font-bold text-xs cursor-pointer transition-all shadow-sm"
                     title="Message Venue Owner directly"
                   >
@@ -1916,12 +1913,7 @@ export default function Discovery({
                       </div>
                       <button
                         type="button"
-                        onClick={async () => {
-                          const ownerId = selectedSlotTurf.owner_id || selectedSlotTurf.ownerId || 'usr_venue_owner';
-                          const ownerName = selectedSlotTurf.ownerName || selectedSlotTurf.venue || selectedSlotTurf.name || 'Venue Owner';
-                          await apiCreateDirectChat(user?.id || 'usr_me', ownerId);
-                          alert(`Direct message stream opened with ${ownerName}! You can now request advance slot reservations.`);
-                        }}
+                        onClick={() => handleContactVenueOwner(selectedSlotTurf, null)}
                         className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-full transition-all flex items-center justify-center space-x-2 mx-auto shadow-lg shadow-indigo-600/30 cursor-pointer"
                       >
                         <MessageSquare className="w-4 h-4" />

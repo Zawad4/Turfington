@@ -453,19 +453,35 @@ export default function App() {
                 onContactSeller={(item) => {
                   if (!item) return;
                   const sellerNameStr = typeof item.sellerName === 'string' && item.sellerName.trim() ? item.sellerName : 'Gear Seller';
-                  const sellerId = item.seller_id || item.sellerId || 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
+                  const sellerId = item.seller_id || item.sellerId || item.seller_uid || item.sellerUid || 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
+                  const priceStr = item.price != null ? `₹${item.price}` : '';
+                  const initialMsg = `Hi ${sellerNameStr}! I am interested in buying this product: ${item.name || item.title || 'Sports Gear'}${priceStr ? ` (${priceStr})` : ''}. Is this still available?`;
+
                   const sellerTarget = {
                     id: sellerId,
                     firebase_uid: sellerId,
                     full_name: sellerNameStr,
                     name: sellerNameStr,
                     displayName: sellerNameStr,
-                    avatar: item.sellerAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
-                    avatarUrl: item.sellerAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
-                    role: 'player'
+                    avatar: item.sellerAvatar || item.image || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
+                    avatarUrl: item.sellerAvatar || item.image || '',
+                    role: 'player',
+                    productName: item.name || item.title || 'Sports Gear',
+                    productPrice: priceStr,
+                    productImage: item.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400',
+                    productCondition: item.category || item.condition || 'Equipment',
+                    initialMessage: initialMsg,
+                    contextBanner: {
+                      type: 'marketplace',
+                      title: item.name || item.title || 'Sports Gear',
+                      price: priceStr,
+                      image: item.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400',
+                      subtitle: item.category || item.condition || 'Equipment'
+                    }
                   };
                   try {
                     localStorage.setItem('turfington_target_chat_user', JSON.stringify(sellerTarget));
+                    window.dispatchEvent(new CustomEvent('turfington_open_direct_chat_target', { detail: sellerTarget }));
                   } catch {}
                   handleNavClick('community');
                 }}

@@ -307,6 +307,14 @@ export default function Community({ user, setTab }) {
     }
 
     // 5. External chat open handler (from notification banner)
+    const handleOpenDirectTarget = (e) => {
+      if (!isMounted) return;
+      if (e.detail) {
+        handleStartDirectChat(e.detail);
+      }
+    };
+    window.addEventListener('turfington_open_direct_chat_target', handleOpenDirectTarget);
+
     const handleOpenChat = (e) => {
       if (!isMounted) return;
       const convId = e.detail?.conversationId;
@@ -324,6 +332,7 @@ export default function Community({ user, setTab }) {
       unsubInbox();
       unsubGroups();
       window.removeEventListener('turfington_open_chat', handleOpenChat);
+      window.removeEventListener('turfington_open_direct_chat_target', handleOpenDirectTarget);
     };
   }, [currentUserId, selectedSport]);
 
