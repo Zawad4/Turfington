@@ -16,12 +16,22 @@ const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && impor
 /* ─── Static Data ─────────────────────────────────────── */
 const SPORTS_TABS = ['All', 'Football', 'Badminton', 'Table Tennis', 'Bowling', 'Cricket'];
 
+const DEFAULT_SPORT_IMAGES = {
+  Football: '/trophy.png',
+  Badminton: '/smash_club_badminton.jpg',
+  'Table Tennis': 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=800',
+  Bowling: '/bowling.jpg',
+  Cricket: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=800'
+};
+
 const TOURNAMENTS = [
   {
     id: 1,
     title: 'Vanguard Weekend Football Gold Cup',
     sport: 'Football',
     image: '/trophy.png',
+    banner: '/trophy.png',
+    pfp: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=300',
     prizePool: '₹5,000',
     prizeRaw: 5000,
     entryFee: '₹249',
@@ -40,6 +50,8 @@ const TOURNAMENTS = [
     title: 'Championship Table Tennis Open',
     sport: 'Table Tennis',
     image: 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=800',
+    banner: 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=800',
+    pfp: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?q=80&w=300',
     prizePool: '₹2,500',
     prizeRaw: 2500,
     entryFee: '₹149',
@@ -58,6 +70,8 @@ const TOURNAMENTS = [
     title: 'Smash Club Badminton Pro Series',
     sport: 'Badminton',
     image: '/smash_club_badminton.jpg',
+    banner: '/smash_club_badminton.jpg',
+    pfp: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=300',
     prizePool: '₹4,000',
     prizeRaw: 4000,
     entryFee: '₹199',
@@ -76,6 +90,8 @@ const TOURNAMENTS = [
     title: 'HyperBowl League Night Championship',
     sport: 'Bowling',
     image: '/bowling.jpg',
+    banner: '/bowling.jpg',
+    pfp: 'https://images.unsplash.com/photo-1545803928-8e6d97e59c56?q=80&w=300',
     prizePool: '₹3,000',
     prizeRaw: 3000,
     entryFee: '₹99',
@@ -275,9 +291,31 @@ function TournamentRegistrationModal({ tournament, user, onClose, onSuccess }) {
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
         className="relative bg-[#111116] border border-white/15 shadow-[0_25px_80px_rgba(0,0,0,0.95)] w-full max-w-[540px] p-6 sm:p-8 z-10 text-left my-auto rounded-3xl"
       >
-        <button onClick={onClose} className="absolute top-5 right-5 p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-neutral-400 hover:text-white transition-all">
-          <X className="w-4 h-4" />
-        </button>
+        <div className="relative h-28 -mx-6 -mt-6 sm:-mx-8 sm:-mt-8 mb-5 overflow-hidden rounded-t-3xl bg-neutral-900 border-b border-white/10">
+          <img
+            src={tournament?.banner || tournament?.image}
+            alt=""
+            className="w-full h-full object-cover brightness-75"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#111116] via-black/40 to-black/20" />
+          <button onClick={onClose} className="absolute top-3.5 right-3.5 z-20 p-2 rounded-full bg-black/60 backdrop-blur-md border border-white/20 hover:bg-black/80 text-neutral-300 hover:text-white transition-all cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+          <div className="absolute bottom-3 left-6 sm:left-8 flex items-center space-x-3">
+            <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-white/30 shadow-xl bg-neutral-900 flex-shrink-0">
+              <img
+                src={tournament?.pfp || tournament?.image || tournament?.banner}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div>
+              <span className="text-[9px] uppercase font-black text-indigo-300 tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30">
+                {tournament?.sport}
+              </span>
+            </div>
+          </div>
+        </div>
 
         {/* Step Header Indicator */}
         <div className="mb-6">
@@ -671,8 +709,90 @@ function CreateTournamentForm({ onClose, onCreated }) {
     title: '', sport: 'Football', startDate: '', endDate: '', venue: '', city: '',
     prizePool: '', entryFee: '', slots: '16', format: 'Knockout', level: 'All Levels',
     teamSize: '1', registrationDeadline: '', contactPhone: '', contactEmail: '',
-    rules: '', description: '', image: ''
+    rules: '', description: '', image: '', banner: '', pfp: ''
   });
+
+  const fileInputRef = useRef(null);
+  const pfpFileInputRef = useRef(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const compressImage = (file, maxDim = 1200) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          if (width > height) {
+            if (width > maxDim) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            }
+          } else {
+            if (height > maxDim) {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = () => resolve(loadEvent.target?.result || '');
+        img.src = loadEvent.target?.result;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleMainPhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const dataUrl = await compressImage(file, 1200);
+      if (dataUrl) {
+        setForm(prev => ({
+          ...prev,
+          image: dataUrl,
+          banner: dataUrl,
+          pfp: prev.pfp || dataUrl
+        }));
+      }
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleSeparatePfpUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressImage(file, 400);
+      if (dataUrl) {
+        setForm(prev => ({
+          ...prev,
+          pfp: dataUrl
+        }));
+      }
+    } catch {}
+  };
+
+  const handleRemovePhoto = () => {
+    setForm(prev => ({
+      ...prev,
+      image: '',
+      banner: '',
+      pfp: ''
+    }));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (pfpFileInputRef.current) pfpFileInputRef.current.value = '';
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -684,23 +804,139 @@ function CreateTournamentForm({ onClose, onCreated }) {
   const labelClass = "text-[10px] text-neutral-400 uppercase tracking-widest font-bold mb-1.5 block";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-20 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 md:pt-20 overflow-y-auto">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose} className="fixed inset-0 bg-black/90 backdrop-blur-2xl" />
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
-        className="relative bg-[#111116] w-full max-w-[560px] border border-white/15 shadow-[0_25px_80px_rgba(0,0,0,0.95)] z-10 text-left mb-8 rounded-3xl overflow-hidden">
+        className="relative bg-[#111116] w-full max-w-[600px] border border-white/15 shadow-[0_25px_80px_rgba(0,0,0,0.95)] z-10 text-left mb-8 rounded-3xl overflow-hidden">
 
         <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div>
-            <h3 className="font-display font-black text-white text-lg uppercase tracking-tight">Create Tournament</h3>
-            <p className="text-[10px] text-neutral-500 mt-0.5">Fill in details to publish your event</p>
+            <h3 className="font-display font-black text-white text-lg uppercase tracking-tight flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-indigo-400" />
+              <span>Create Tournament</span>
+            </h3>
+            <p className="text-[10px] text-neutral-500 mt-0.5">Upload a photo to set your tournament banner & PFP</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-full bg-white/5 border border-white/10 text-neutral-400 hover:text-white transition-all">
+          <button onClick={onClose} className="p-2 rounded-full bg-white/5 border border-white/10 text-neutral-400 hover:text-white transition-all cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[70vh]">
+        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[75vh]">
+          {/* Tournament Photo (Banner & PFP) Upload Section */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className={labelClass}>Tournament Photo (Banner & PFP) *</label>
+              {(form.banner || form.image) && (
+                <span className="text-[10px] text-emerald-400 font-extrabold flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Photo Attached
+                </span>
+              )}
+            </div>
+
+            <div className="relative rounded-2xl border-2 border-dashed border-white/15 hover:border-indigo-500/50 transition-all bg-[#14141c] overflow-hidden group">
+              {form.banner || form.image ? (
+                <div className="relative">
+                  {/* Banner Preview */}
+                  <div className="relative h-44 w-full overflow-hidden bg-neutral-900">
+                    <img
+                      src={form.banner || form.image}
+                      alt="Tournament Banner Preview"
+                      className="w-full h-full object-cover brightness-90"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/20" />
+
+                    {/* Action buttons over banner */}
+                    <div className="absolute top-3 right-3 flex items-center space-x-2 z-20">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white rounded-full text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer shadow-lg"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Change Photo</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemovePhoto}
+                        className="p-1.5 bg-rose-600/80 hover:bg-rose-600 backdrop-blur-md text-white rounded-full transition-all cursor-pointer shadow-lg"
+                        title="Remove Photo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md border border-white/15 px-2.5 py-1 rounded-full text-[9px] font-extrabold text-indigo-300 uppercase tracking-wider">
+                      Tournament Banner
+                    </div>
+                  </div>
+
+                  {/* Overlapping PFP Preview */}
+                  <div className="absolute bottom-3 left-4 flex items-center space-x-3 z-10">
+                    <div className="relative w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/40 shadow-2xl bg-neutral-900 flex-shrink-0 group/pfp">
+                      <img
+                        src={form.pfp || form.image}
+                        alt="Tournament PFP"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => pfpFileInputRef.current?.click()}
+                        className="absolute inset-0 bg-black/70 opacity-0 group-hover/pfp:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-[8px] font-bold text-white"
+                        title="Change PFP specifically"
+                      >
+                        <Camera className="w-3.5 h-3.5 mb-0.5 text-indigo-300" />
+                        <span>Edit</span>
+                      </button>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-white uppercase tracking-tight flex items-center gap-1.5">
+                        <span>Tournament PFP</span>
+                        <span className="text-[8px] text-emerald-400 font-extrabold px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30">Auto-Linked</span>
+                      </p>
+                      <p className="text-[10px] text-neutral-400">Used as avatar & public tournament badge</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="py-10 px-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-white/[0.02] transition-colors"
+                >
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-[0_0_20px_rgba(99,102,241,0.15)]">
+                    <Upload className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs font-bold text-white mb-1">
+                    Upload Tournament Photo
+                  </p>
+                  <p className="text-[11px] text-neutral-400 max-w-xs">
+                    PNG, JPG, or WEBP. Uploading a photo will automatically format as your tournament's <strong className="text-neutral-200">banner</strong> and <strong className="text-neutral-200">profile picture (PFP)</strong>.
+                  </p>
+                  <span className="mt-4 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-neutral-300 text-[11px] font-bold group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-500 transition-all cursor-pointer">
+                    Browse File
+                  </span>
+                </div>
+              )}
+
+              {/* Hidden file inputs */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleMainPhotoUpload}
+                className="hidden"
+              />
+              <input
+                ref={pfpFileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleSeparatePfpUpload}
+                className="hidden"
+              />
+            </div>
+          </div>
+
           {/* Tournament name */}
           <div>
             <label className={labelClass}>Tournament Name *</label>
@@ -822,7 +1058,7 @@ function CreateTournamentForm({ onClose, onCreated }) {
           </div>
 
           <button type="submit"
-            className="w-full py-4 bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs uppercase tracking-widest rounded-full transition-colors flex items-center justify-center space-x-2">
+            className="w-full py-4 bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs uppercase tracking-widest rounded-full transition-colors flex items-center justify-center space-x-2 cursor-pointer shadow-lg shadow-violet-600/30">
             <Trophy className="w-4 h-4" />
             <span>Publish Tournament</span>
           </button>
