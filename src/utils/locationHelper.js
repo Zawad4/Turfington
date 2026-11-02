@@ -206,3 +206,4 @@ export async function fetchEnglishSearchGeocode(query) {
     return [];
   }
 }
+

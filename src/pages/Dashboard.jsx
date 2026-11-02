@@ -19,22 +19,77 @@ import { formatTime12Hour } from '../utils/formatters';
    PLAYER DASHBOARD
    ════════════════════════════════════════════════════════════ */
 
-const PLAYER_BOOKINGS = [
-  { id: 101, venue: 'Vanguard Sports Arena', sport: 'Football', date: 'Tomorrow, 27 May', time: '06:00 PM – 07:00 PM', price: 3750, status: 'PENDING OWNER APPROVAL', image: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=200' },
-  { id: 1, venue: 'Vanguard Sports Arena', sport: 'Football', date: 'Mon, 26 May', time: '06:00 PM – 07:00 PM', price: 3750, status: 'confirmed', image: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=200' },
-  { id: 2, venue: 'Smash Club Badminton',  sport: 'Badminton', date: 'Wed, 28 May', time: '07:00 AM – 08:00 AM', price: 2500, status: 'rejected', rejection_reason: 'Court under scheduled maintenance', image: '/smash_club_badminton.jpg' },
-  { id: 3, venue: 'Arena Cricket Hub',      sport: 'Cricket',   date: 'Thu, 29 May', time: '06:00 AM – 07:00 AM', price: 1800, status: 'confirmed', image: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=200' }
-];
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-const WEEK_ACTIVITY = [
-  { day: 'Mon', sessions: 1 }, { day: 'Tue', sessions: 0 }, { day: 'Wed', sessions: 1 },
-  { day: 'Thu', sessions: 1 }, { day: 'Fri', sessions: 0 }, { day: 'Sat', sessions: 1 }, { day: 'Sun', sessions: 1 },
-];
+function parseBookingDate(b) {
+  if (!b) return null;
+  const now = new Date();
 
-const MONTH_ACTIVITY = [
-  { week: 'W1', sessions: 3 }, { week: 'W2', sessions: 5 },
-  { week: 'W3', sessions: 2 }, { week: 'W4', sessions: 5 },
-];
+  const rawDateStr = String(b.date || b.time || b.slot_time || '').trim();
+  const lower = rawDateStr.toLowerCase();
+
+  if (lower.startsWith('today') || lower.includes('today')) {
+    return now;
+  }
+  if (lower.startsWith('tomorrow') || lower.includes('tomorrow')) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    return d;
+  }
+  if (lower.startsWith('yesterday') || lower.includes('yesterday')) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    return d;
+  }
+
+  if (b.date) {
+    const directDate = new Date(b.date);
+    if (!isNaN(directDate.getTime()) && !/^[a-zA-Z\s,]+$/.test(b.date)) {
+      return directDate;
+    }
+    const withYear = new Date(`${b.date} ${now.getFullYear()}`);
+    if (!isNaN(withYear.getTime())) {
+      return withYear;
+    }
+  }
+
+  const rawCreated = b.created_at || b.createdAt;
+  if (rawCreated) {
+    if (typeof rawCreated.toDate === 'function') {
+      return rawCreated.toDate();
+    } else if (typeof rawCreated === 'number') {
+      return new Date(rawCreated);
+    } else if (typeof rawCreated === 'string') {
+      const dt = new Date(rawCreated);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+  }
+
+  return now;
+}
+
+function getBookingDayKey(b) {
+  if (!b) return 'Mon';
+  const rawStr = String(b.date || b.time || b.slot_time || '');
+  for (const d of DAY_NAMES) {
+    if (rawStr.includes(d)) return d;
+  }
+  const dt = parseBookingDate(b);
+  if (dt && !isNaN(dt.getTime())) {
+    const dayIdx = dt.getDay(); // 0 = Sun, 1 = Mon, ...
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayIdx];
+  }
+  return 'Mon';
+}
+
+function getBookingWeekKey(b) {
+  const dt = parseBookingDate(b);
+  const dayNum = dt ? dt.getDate() : 1;
+  if (dayNum <= 7) return 'W1';
+  if (dayNum <= 14) return 'W2';
+  if (dayNum <= 21) return 'W3';
+  return 'W4';
+}
 
 const SPORT_COLORS_PLAYER = {
   Football:      { ring: 'ring-emerald-500/30', badge: 'bg-emerald-500/15 text-emerald-400', dot: 'bg-emerald-400' },
@@ -403,6 +458,59 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
   const totalSpent = confirmed.reduce((s, b) => s + b.price, 0);
   const totalFines = cancelled.reduce((s, b) => s + (b.fine || 0), 0);
 
+  const validSessions = useMemo(() => {
+    return bookings.filter(b => b && b.status !== 'cancelled' && b.status !== 'rejected');
+  }, [bookings]);
+
+  const playerWeeklyActivity = useMemo(() => {
+    const dayMap = {
+      Mon: { day: 'Mon', sessions: 0 },
+      Tue: { day: 'Tue', sessions: 0 },
+      Wed: { day: 'Wed', sessions: 0 },
+      Thu: { day: 'Thu', sessions: 0 },
+      Fri: { day: 'Fri', sessions: 0 },
+      Sat: { day: 'Sat', sessions: 0 },
+      Sun: { day: 'Sun', sessions: 0 },
+    };
+
+    validSessions.forEach(b => {
+      const dayKey = getBookingDayKey(b);
+      if (dayKey && dayMap[dayKey]) {
+        dayMap[dayKey].sessions += 1;
+      }
+    });
+
+    return DAY_NAMES.map(d => dayMap[d]);
+  }, [validSessions]);
+
+  const playerMonthlyActivity = useMemo(() => {
+    const weekMap = {
+      W1: { week: 'W1', sessions: 0 },
+      W2: { week: 'W2', sessions: 0 },
+      W3: { week: 'W3', sessions: 0 },
+      W4: { week: 'W4', sessions: 0 },
+    };
+
+    validSessions.forEach(b => {
+      const wKey = getBookingWeekKey(b);
+      if (wKey && weekMap[wKey]) {
+        weekMap[wKey].sessions += 1;
+      }
+    });
+
+    return ['W1', 'W2', 'W3', 'W4'].map(w => weekMap[w]);
+  }, [validSessions]);
+
+  const currentWeekSessions = useMemo(() => {
+    return playerWeeklyActivity.reduce((acc, d) => acc + d.sessions, 0);
+  }, [playerWeeklyActivity]);
+
+  const currentMonthSessions = useMemo(() => {
+    return playerMonthlyActivity.reduce((acc, w) => acc + w.sessions, 0);
+  }, [playerMonthlyActivity]);
+
+  const currentActivityTotal = view === 'week' ? currentWeekSessions : currentMonthSessions;
+
   const handleCancelRequest = (booking) => {
     setCancelTarget(booking);
     setShowCancelModal(true);
@@ -456,7 +564,13 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: view === 'week' ? 'Bookings (Week)' : 'Bookings (Month)', value: confirmed.length, icon: <CheckCircle className="w-4 h-4" />, color: 'indigo', sub: 'confirmed sessions' },
+          { 
+            label: view === 'week' ? 'Bookings (Week)' : 'Bookings (Month)', 
+            value: view === 'week' ? currentWeekSessions : currentMonthSessions, 
+            icon: <CheckCircle className="w-4 h-4" />, 
+            color: 'indigo', 
+            sub: view === 'week' ? 'active sessions this week' : 'active sessions this month' 
+          },
           { label: 'Pending Approval',  value: pending.length,    icon: <Clock className="w-4 h-4" />,        color: 'amber',  sub: 'awaiting counter review' },
           { label: 'Canceled Bookings', value: cancelled.length,  icon: <XCircle className="w-4 h-4" />,      color: 'rose',   sub: 'released slots' },
           { label: 'Fines Paid',        value: `₹${totalFines.toLocaleString('en-IN')}`, icon: <AlertTriangle className="w-4 h-4" />, color: 'amber', sub: 'cancellation penalty' },
@@ -477,14 +591,22 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
 
       {/* Activity chart */}
       <div className="glass-card p-6 border border-white/5">
-        <h3 className="font-display font-bold text-white text-sm uppercase tracking-wider mb-5">
-          {view === 'week' ? 'Daily Sessions — This Week' : 'Weekly Sessions — This Month'}
-        </h3>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-display font-bold text-white text-sm uppercase tracking-wider">
+            {view === 'week' ? 'Daily Sessions — This Week' : 'Weekly Sessions — This Month'}
+          </h3>
+          <span className="text-[11px] text-neutral-400 font-medium">
+            {currentActivityTotal} {currentActivityTotal === 1 ? 'session' : 'sessions'} recorded
+          </span>
+        </div>
         <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={view === 'week' ? WEEK_ACTIVITY : MONTH_ACTIVITY} barSize={28}>
+          <BarChart data={view === 'week' ? playerWeeklyActivity : playerMonthlyActivity} barSize={28}>
             <XAxis dataKey={view === 'week' ? 'day' : 'week'} tick={{ fill: '#525252', fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis hide />
-            <Tooltip contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} />
+            <YAxis hide allowDecimals={false} domain={[0, (dataMax) => Math.max(dataMax, 2)]} />
+            <Tooltip 
+              contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11, color: '#fff' }} 
+              formatter={(val) => [`${val} ${val === 1 ? 'session' : 'sessions'}`, 'Activity']}
+            />
             <Bar dataKey="sessions" fill="url(#playerGrad)" radius={[6, 6, 0, 0]} />
             <defs>
               <linearGradient id="playerGrad" x1="0" y1="0" x2="0" y2="1">
@@ -494,6 +616,13 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
             </defs>
           </BarChart>
         </ResponsiveContainer>
+        {currentActivityTotal === 0 && (
+          <div className="mt-3 text-center py-2.5 px-4 rounded-xl bg-white/[0.02] border border-white/5">
+            <p className="text-xs text-neutral-500 font-medium">
+              No sessions booked yet for this {view}. Book slots at nearby venues to track your personal activity!
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Bookings list */}
@@ -706,8 +835,6 @@ const SPORT_COLORS = {
   Pickleball: '#14b8a6',
   Bowling: '#eab308'
 };
-
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function OwnerDashboard({ user }) {
   const [recentBookings, setRecentBookings] = useState([]);
