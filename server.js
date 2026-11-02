@@ -1160,42 +1160,106 @@ app.post('/api/friends/respond', (req, res) => {
   res.json({ success: true, status, directChatId });
 });
 
-// 10.5 Follow / Unfollow & Follow Counts API
+// 10.5 Follow / Unfollow & Follow Counts API with Full Profile Storage
 app.get('/api/users/:userId/follow-counts', (req, res) => {
   const { userId } = req.params;
   const db = readDB();
   const follows = db.follows || [];
-  const followers = follows.filter(f => f.following_id === userId).map(f => f.follower_id);
-  const following = follows.filter(f => f.follower_id === userId).map(f => f.following_id);
+  const uId = String(userId).toLowerCase().trim();
+  const followers = follows.filter(f => {
+    const fId = String(f.following_id || f.followingId || f.following_email || '').toLowerCase().trim();
+    return fId === uId;
+  });
+  const following = follows.filter(f => {
+    const fId = String(f.follower_id || f.followerId || f.follower_email || '').toLowerCase().trim();
+    return fId === uId;
+  });
   res.json({
     success: true,
     userId,
     followersCount: followers.length,
     followingCount: following.length,
-    followerIds: followers,
-    followingIds: following
+    followerIds: followers.map(f => f.follower_id || f.followerId),
+    followingIds: following.map(f => f.following_id || f.followingId),
+    followers,
+    following
   });
+});
+
+app.get('/api/users/:userId/followers', (req, res) => {
+  const { userId } = req.params;
+  const db = readDB();
+  const follows = db.follows || [];
+  const uId = String(userId).toLowerCase().trim();
+  const followers = follows.filter(f => {
+    const fId = String(f.following_id || f.followingId || f.following_email || '').toLowerCase().trim();
+    return fId === uId;
+  }).map(f => ({
+    id: f.follower_id || f.followerId,
+    name: f.follower_name || f.followerName || 'Athlete',
+    avatar: f.follower_avatar || f.followerAvatar,
+    player_id: f.follower_handle || f.followerHandle,
+    role: f.follower_role || f.followerRole || 'player',
+    email: f.follower_email || f.followerEmail
+  }));
+  res.json({ success: true, followers });
+});
+
+app.get('/api/users/:userId/following', (req, res) => {
+  const { userId } = req.params;
+  const db = readDB();
+  const follows = db.follows || [];
+  const uId = String(userId).toLowerCase().trim();
+  const following = follows.filter(f => {
+    const fId = String(f.follower_id || f.followerId || f.follower_email || '').toLowerCase().trim();
+    return fId === uId;
+  }).map(f => ({
+    id: f.following_id || f.followingId,
+    name: f.following_name || f.followingName || 'Athlete',
+    avatar: f.following_avatar || f.followingAvatar,
+    player_id: f.following_handle || f.followingHandle,
+    role: f.following_role || f.followingRole || 'player',
+    email: f.following_email || f.followingEmail
+  }));
+  res.json({ success: true, following });
 });
 
 app.post('/api/users/:userId/follow', (req, res) => {
   const { userId } = req.params;
-  const { followerId } = req.body;
+  const { followerId, followerData, followingData } = req.body;
   if (!followerId || !userId) {
     return res.status(400).json({ success: false, error: 'followerId and userId required' });
   }
   const db = readDB();
   db.follows = db.follows || [];
-  const exists = db.follows.some(f => f.follower_id === followerId && f.following_id === userId);
+  const exists = db.follows.some(f => 
+    (f.follower_id === followerId || f.followerId === followerId) && 
+    (f.following_id === userId || f.followingId === userId)
+  );
   if (!exists) {
-    db.follows.push({
+    db.follows.unshift({
       follower_id: followerId,
+      followerId,
+      follower_name: followerData?.name || followerData?.full_name || 'Athlete',
+      follower_avatar: followerData?.avatar || followerData?.avatar_url,
+      follower_handle: followerData?.handle || followerData?.player_id,
+      follower_role: followerData?.role || 'player',
+      follower_email: followerData?.email,
+
       following_id: userId,
+      followingId: userId,
+      following_name: followingData?.name || followingData?.full_name || 'Athlete',
+      following_avatar: followingData?.avatar || followingData?.avatar_url,
+      following_handle: followingData?.handle || followingData?.player_id,
+      following_role: followingData?.role || 'player',
+      following_email: followingData?.email,
+
       created_at: new Date().toISOString()
     });
     writeDB(db);
   }
-  const followersCount = db.follows.filter(f => f.following_id === userId).length;
-  const followingCount = db.follows.filter(f => f.follower_id === followerId).length;
+  const followersCount = db.follows.filter(f => f.following_id === userId || f.followingId === userId).length;
+  const followingCount = db.follows.filter(f => f.follower_id === followerId || f.followerId === followerId).length;
   res.json({ success: true, isFollowing: true, followersCount, followingCount });
 });
 
@@ -1207,10 +1271,13 @@ app.post('/api/users/:userId/unfollow', (req, res) => {
   }
   const db = readDB();
   db.follows = db.follows || [];
-  db.follows = db.follows.filter(f => !(f.follower_id === followerId && f.following_id === userId));
+  db.follows = db.follows.filter(f => !(
+    (f.follower_id === followerId || f.followerId === followerId) && 
+    (f.following_id === userId || f.followingId === userId)
+  ));
   writeDB(db);
-  const followersCount = db.follows.filter(f => f.following_id === userId).length;
-  const followingCount = db.follows.filter(f => f.follower_id === followerId).length;
+  const followersCount = db.follows.filter(f => f.following_id === userId || f.followingId === userId).length;
+  const followingCount = db.follows.filter(f => f.follower_id === followerId || f.followerId === followerId).length;
   res.json({ success: true, isFollowing: false, followersCount, followingCount });
 });
 

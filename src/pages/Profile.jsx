@@ -22,10 +22,15 @@ import {
   Clock,
   Share2,
   Copy,
-  Hash
+  Hash,
+  ExternalLink,
+  UserPlus,
+  UserCheck,
+  Search
 } from 'lucide-react';
 import { apiUpdateProfile, apiFetchPlayerReviews, getRatingColor } from '../services/db';
-import { getFollowCounts, getLocalFollowing, getLocalFollowers } from '../services/followService';
+import { getFollowCounts, getLocalFollowing, getLocalFollowers, getFollowersList, getFollowingList, toggleFollowUser, isUserFollowing, subscribeToFollows } from '../services/followService';
+import FollowersListModal from '../components/FollowersListModal';
 import { calculateCompletedMatches } from '../utils/formatters';
 import { useToast } from '../context';
 import { auth } from '../services/firebase';
@@ -237,7 +242,9 @@ export default function Profile({
   onSwitchRole, 
   onOpenProfileSwitcher,
   onUpdateUser,
-  setRole 
+  setRole,
+  setTab = null,
+  onStartChat = null
 }) {
   const { toast } = useToast();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -276,28 +283,48 @@ export default function Profile({
 
   const currentUserId = user?.id || user?.uid || user?.firebase_uid;
 
-  // Real-time Follow Counts (Followers & Following)
+  // Real-time Follow Counts & Athlete Lists (Followers & Following)
   const [followCounts, setFollowCounts] = useState(() => ({
-    followingCount: getLocalFollowing(currentUserId).length,
-    followersCount: getLocalFollowers(currentUserId).length
+    followingCount: getLocalFollowing(user || currentUserId).length,
+    followersCount: getLocalFollowers(user || currentUserId).length
   }));
+  const [showFollowersModal, setShowFollowersModal] = useState(false);
+  const [followersModalTab, setFollowersModalTab] = useState('followers');
+  const [followersList, setFollowersList] = useState([]);
+  const [followingList, setFollowingList] = useState([]);
 
   useEffect(() => {
-    if (!currentUserId) return;
-    const refreshFollow = () => {
-      setFollowCounts({
-        followingCount: getLocalFollowing(currentUserId).length,
-        followersCount: getLocalFollowers(currentUserId).length
-      });
-      getFollowCounts(currentUserId).then(counts => {
-        if (counts) setFollowCounts(counts);
-      });
+    if (!user && !currentUserId) return;
+    let isMounted = true;
+
+    const refreshFollow = async () => {
+      try {
+        const counts = await getFollowCounts(user || currentUserId);
+        if (isMounted && counts) setFollowCounts(counts);
+
+        const fers = await getFollowersList(user || currentUserId);
+        if (isMounted) setFollowersList(fers);
+
+        const fing = await getFollowingList(user || currentUserId);
+        if (isMounted) setFollowingList(fing);
+      } catch (err) {
+        console.warn('Error refreshing follow data:', err);
+      }
     };
 
     refreshFollow();
+
+    const unsubFirestore = subscribeToFollows(() => {
+      refreshFollow();
+    });
+
     window.addEventListener('turfington_follow_change', refreshFollow);
-    return () => window.removeEventListener('turfington_follow_change', refreshFollow);
-  }, [currentUserId]);
+    return () => {
+      isMounted = false;
+      if (typeof unsubFirestore === 'function') unsubFirestore();
+      window.removeEventListener('turfington_follow_change', refreshFollow);
+    };
+  }, [user, currentUserId]);
 
   // Real-time Matches Count from Slot Bookings
   // Only completed slots (where slot end time has passed) count towards Matches (+1).
@@ -594,12 +621,44 @@ export default function Profile({
 
       {/* 2. STATS BAR */}
       <div className={`grid grid-cols-2 ${profile.stats.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-4 mb-6`}>
-        {profile.stats.map((stat, i) => (
-          <div key={i} className="glass-card p-5 border border-white/5 space-y-1 text-center">
-            <p className="text-[10px] text-neutral-400 uppercase tracking-widest font-extrabold">{stat.name}</p>
-            <p className="font-display font-black text-2xl text-white">{stat.value}</p>
-          </div>
-        ))}
+        {profile.stats.map((stat, i) => {
+          const isFollowStat = stat.name === 'Followers' || stat.name === 'Following';
+          return (
+            <div 
+              key={i} 
+              onClick={() => {
+                if (stat.name === 'Followers') {
+                  setFollowersModalTab('followers');
+                  setShowFollowersModal(true);
+                } else if (stat.name === 'Following') {
+                  setFollowersModalTab('following');
+                  setShowFollowersModal(true);
+                }
+              }}
+              className={`glass-card p-5 border border-white/5 space-y-1 text-center transition-all ${
+                isFollowStat 
+                  ? 'cursor-pointer hover:border-indigo-500/40 hover:bg-white/[0.04] active:scale-[0.98] group shadow-sm' 
+                  : ''
+              }`}
+              title={isFollowStat ? `Click to view ${stat.name} list` : undefined}
+            >
+              <div className="flex items-center justify-center gap-1.5">
+                <p className="text-[10px] text-neutral-400 group-hover:text-indigo-300 uppercase tracking-widest font-extrabold transition-colors">
+                  {stat.name}
+                </p>
+                {isFollowStat && (
+                  <ExternalLink className="w-2.5 h-2.5 text-indigo-400/60 group-hover:text-indigo-400 transition-colors" />
+                )}
+              </div>
+              <p className="font-display font-black text-2xl text-white group-hover:text-indigo-400 transition-colors">
+                {stat.value}
+              </p>
+              {isFollowStat && (
+                <p className="text-[9px] text-neutral-500 font-mono tracking-tight">Tap to view list ↗</p>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* 2.5 OVERALL RATING CARD (Only Overall Rating, with High=Green / Medium=Yellow / Low=Red) */}
@@ -1098,6 +1157,46 @@ export default function Profile({
                   avatar_url: croppedUrl,
                   avatar: croppedUrl
                 });
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 2.6 FOLLOWERS & FOLLOWING NETWORK MODAL */}
+      <AnimatePresence>
+        {showFollowersModal && (
+          <FollowersListModal
+            isOpen={showFollowersModal}
+            onClose={() => setShowFollowersModal(false)}
+            initialTab={followersModalTab}
+            currentUser={user}
+            followersList={followersList}
+            followingList={followingList}
+            onFollowToggle={async (targetAthlete) => {
+              await toggleFollowUser(user, targetAthlete);
+              const counts = await getFollowCounts(user || currentUserId);
+              setFollowCounts(counts);
+              const fers = await getFollowersList(user || currentUserId);
+              setFollowersList(fers);
+              const fing = await getFollowingList(user || currentUserId);
+              setFollowingList(fing);
+            }}
+            onStartDirectChat={(targetAthlete) => {
+              setShowFollowersModal(false);
+              try {
+                localStorage.setItem('turfington_target_chat_user', JSON.stringify(targetAthlete));
+              } catch {}
+              if (typeof onStartChat === 'function') {
+                onStartChat(targetAthlete);
+              } else if (typeof setTab === 'function') {
+                setTab('community');
+              }
+            }}
+            onNavigateDiscover={() => {
+              setShowFollowersModal(false);
+              if (typeof setTab === 'function') {
+                setTab('discover');
               }
             }}
           />

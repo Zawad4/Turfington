@@ -1220,7 +1220,7 @@ export default function Community({ user, setTab }) {
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <button
                                 type="button"
-                                onClick={(e) => handleToggleFriend(e, athlete.id)}
+                                onClick={(e) => handleToggleFriend(e, athlete.id, athlete)}
                                 className={`px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                                   isFriend
                                     ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-rose-500/15 hover:text-rose-400 hover:border-rose-500/30'
@@ -1459,7 +1459,7 @@ export default function Community({ user, setTab }) {
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <button
                             type="button"
-                            onClick={(e) => handleToggleFriend(e, athlete.id)}
+                            onClick={(e) => handleToggleFriend(e, athlete.id, athlete)}
                             className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                               isFriend
                                 ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-rose-500/15 hover:text-rose-400 hover:border-rose-500/30'

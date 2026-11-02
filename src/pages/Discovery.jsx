@@ -1699,7 +1699,7 @@ export default function Discovery({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleFollow(player.id);
+                                toggleFollow(player.id, player);
                               }}
                               className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
                                 isFollowing
@@ -2486,7 +2486,7 @@ export default function Discovery({
 
                   <button
                     onClick={async () => {
-                      await toggleFollow(selectedPlayerModal.id);
+                      await toggleFollow(selectedPlayerModal.id, selectedPlayerModal);
                     }}
                     className={`py-2.5 px-5 text-xs font-bold rounded-xl border transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
                       followedPlayers.includes(selectedPlayerModal.id)

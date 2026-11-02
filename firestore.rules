@@ -191,10 +191,8 @@ service cloud.firestore {
     }
 
     match /follows/{followId} {
-      allow read, write: if isAuthenticated() && (
-        resource.data.follower_id == request.auth.uid || 
-        request.resource.data.follower_id == request.auth.uid
-      );
+      allow read: if true;
+      allow create, update, delete: if true;
     }
 
     // ── 8. Stories & Posts ──────────────────────────────────
