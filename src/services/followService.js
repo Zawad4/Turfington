@@ -150,3 +150,4 @@ export async function getFollowCounts(userId) {
 
   return counts;
 }
+
