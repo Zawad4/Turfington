@@ -2440,7 +2440,7 @@ export function apiSubscribeVenues(callback) {
   };
 }
 
-export async function apiFetchNearbyTurfs(playerLat, playerLng, radiusKm = 5) {
+export async function apiFetchNearbyTurfs(playerLat, playerLng, radiusKm = 'All') {
   const allTurfs = await apiFetchTurfs();
   if (!playerLat || !playerLng) return allTurfs;
 

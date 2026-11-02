@@ -64,7 +64,7 @@ export default function Discovery({
   const [searchQuery, setSearchQuery] = useState('');
   const [nearYouSubTab, setNearYouSubTab] = useState('venues'); // 'venues' | 'join_games'
   const [activeTab, setActiveTab] = useState('Near You');
-  const [radiusKm, setRadiusKm] = useState(5); // Default 5 km radius; manual expansion by player
+  const [radiusKm, setRadiusKm] = useState('All'); // Default 'All': all venues and players appear in ascending distance order; radius limit lives in Filters
   const [selectedMarker, setSelectedMarker] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -547,6 +547,19 @@ export default function Discovery({
     }
     loadDbPlayers();
   }, [userCoordinates, radiusKm, searchQuery, user?.id]);
+
+  const filteredDbPlayers = useMemo(() => {
+    let list = [...dbPlayersList];
+    if (radiusKm !== 'All' && !isNaN(Number(radiusKm))) {
+      list = list.filter(p => (p.distanceNum || 0) <= Number(radiusKm));
+    }
+    list.sort((a, b) => {
+      const distA = typeof a.distanceNum === 'number' && !isNaN(a.distanceNum) ? a.distanceNum : 999999;
+      const distB = typeof b.distanceNum === 'number' && !isNaN(b.distanceNum) ? b.distanceNum : 999999;
+      return distA - distB;
+    });
+    return list;
+  }, [dbPlayersList, radiusKm]);
 
   // Update distances when GPS is obtained or when rawActivities load
   const applyRealDistances = useCallback((lat, lng, sourceActivities) => {
@@ -1097,20 +1110,33 @@ export default function Discovery({
                 </select>
               </div>
 
-              {/* Distance Filter */}
-              <div className="space-y-3">
-                <div className="flex justify-between text-xs font-medium">
-                  <label className="text-neutral-400 uppercase tracking-widest font-bold">Max Distance</label>
-                  <span className="text-white">{selectedDistance} km</span>
+              {/* Distance Radius Filter */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs font-medium">
+                  <label className="text-neutral-400 uppercase tracking-widest font-bold">Distance Radius</label>
+                  <span className="text-white font-bold px-2 py-0.5 rounded-full bg-white/10 text-[11px]">
+                    {radiusKm === 'All' ? 'All (Ascending)' : `${radiusKm} km`}
+                  </span>
                 </div>
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="25" 
-                  value={selectedDistance}
-                  onChange={(e) => setSelectedDistance(e.target.value)}
-                  className="w-full accent-white bg-neutral-800 rounded-lg cursor-pointer h-1.5"
-                />
+                <div className="grid grid-cols-3 gap-1.5 pt-1">
+                  {['All', 5, 10, 20, 30, 50].map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setRadiusKm(r)}
+                      className={`py-2 px-2 text-xs font-bold rounded-xl transition-all cursor-pointer border ${
+                        (radiusKm === r || String(radiusKm) === String(r))
+                          ? 'bg-[#5842fe] border-[#5842fe] text-white shadow-md shadow-[#5842fe]/30 font-black'
+                          : 'bg-[#0d0d0d] border-white/10 text-neutral-400 hover:text-white hover:border-white/20'
+                      }`}
+                    >
+                      {r === 'All' ? 'All' : `${r} km`}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-neutral-500 mt-1">
+                  Venues & players appear in ascending order (nearest first).
+                </p>
               </div>
 
               {/* Skill Filter */}
@@ -1155,11 +1181,12 @@ export default function Discovery({
               <button 
                 onClick={() => {
                   setSelectedSport('All');
+                  setRadiusKm('All');
                   setSelectedDistance('10');
                   setSelectedSkill('All');
                   setSearchQuery('');
                 }}
-                className="w-full py-2.5 text-xs text-center border border-white/10 hover:bg-white/5 hover:border-white/20 transition-all rounded-full font-bold"
+                className="w-full py-2.5 text-xs text-center border border-white/10 hover:bg-white/5 hover:border-white/20 transition-all rounded-full font-bold cursor-pointer"
               >
                 Reset Filters
               </button>
@@ -1265,7 +1292,7 @@ export default function Discovery({
                   {/* ─────────────────────────────────────────────────────────── */}
                   {nearYouSubTab === 'venues' && (
                     <div className="space-y-6">
-                      {/* Header & Radius Filter Bar */}
+                      {/* Header Bar */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 border border-white/5 rounded-2xl">
                         <div>
                           <div className="flex items-center space-x-2">
@@ -1275,28 +1302,24 @@ export default function Discovery({
                             </h3>
                           </div>
                           <p className="text-xs text-neutral-400 mt-0.5">
-                            Showing venues {radiusKm === 'All' ? <span className="text-emerald-400 font-bold">across all distances</span> : <>within <span className="text-emerald-400 font-bold">{radiusKm} km</span> radius</>}
-                            {userCoordinates ? ` of (${userCoordinates.lat.toFixed(4)}, ${userCoordinates.lng.toFixed(4)})` : ''}
+                            All registered venues in ascending order (closest first)
+                            {userCoordinates ? ` • GPS active (${userCoordinates.lat.toFixed(4)}, ${userCoordinates.lng.toFixed(4)})` : ''}
+                            {radiusKm !== 'All' ? <span className="text-[#5842fe] font-bold ml-1.5">• Radius filter: {radiusKm} km</span> : ''}
                           </p>
                         </div>
 
-                        {/* Radius Quick Selector */}
-                        <div className="flex items-center space-x-2 bg-[#0a0a0a] p-1.5 rounded-full border border-white/10 self-start sm:self-auto overflow-x-auto no-scrollbar">
-                          <span className="text-[10px] text-neutral-400 uppercase font-bold pl-3 pr-1">Radius:</span>
-                          {[5, 10, 20, 30, 50, 'All'].map(r => (
-                            <button
-                              key={r}
-                              onClick={() => setRadiusKm(r)}
-                              className={`px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer flex-shrink-0 ${
-                                (radiusKm === r || String(radiusKm) === String(r))
-                                  ? 'bg-[#5842fe] text-white shadow-lg shadow-[#5842fe]/30'
-                                  : 'text-neutral-400 hover:text-white'
-                              }`}
-                            >
-                              {r === 'All' ? 'All' : `${r} km`}
-                            </button>
-                          ))}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowFilters(prev => !prev)}
+                          className={`px-4 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-2 self-start sm:self-auto ${
+                            showFilters || radiusKm !== 'All'
+                              ? 'bg-[#5842fe]/20 border-[#5842fe]/50 text-white shadow-md shadow-[#5842fe]/20'
+                              : 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-300 hover:text-white'
+                          }`}
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5" />
+                          <span>Filters {radiusKm !== 'All' ? `(${radiusKm} km)` : ''}</span>
+                        </button>
                       </div>
 
                       {/* Location Permission Prompt Banner if denied / missing */}
@@ -1325,38 +1348,26 @@ export default function Discovery({
 
                       {/* Nearby Turfs Grid */}
                       {nearbyList.length === 0 ? (
-                        <div className="glass-card p-12 text-center border border-dashed border-white/10 space-y-3">
+                        <div className="glass-card p-12 text-center border border-dashed border-white/10 rounded-3xl space-y-3">
                           <MapPin className="w-10 h-10 text-neutral-600 mx-auto" />
-                          <h3 className="text-white font-bold text-base">No Turfs Found Within {radiusKm === 'All' ? 'This Filter' : `${radiusKm} km`}</h3>
+                          <h3 className="text-white font-bold text-base">
+                            {radiusKm !== 'All' ? `No Turfs Found Within ${radiusKm} km` : 'No Registered Venues Yet'}
+                          </h3>
                           <p className="text-neutral-500 text-xs max-w-md mx-auto">
-                            There are no registered turfs in this immediate radius. Expand your radius filter to view more venues.
+                            {radiusKm !== 'All'
+                              ? `No registered venues match your ${radiusKm} km radius filter. Reset the filter to view all venues in ascending order.`
+                              : 'There are currently no registered venues in the system. Check back later or add a venue!'}
                           </p>
-                          <div className="flex flex-wrap justify-center gap-2 pt-2">
-                            <button
-                              onClick={() => setRadiusKm(10)}
-                              className="px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full transition-all cursor-pointer"
-                            >
-                              Expand to 10 km
-                            </button>
-                            <button
-                              onClick={() => setRadiusKm(20)}
-                              className="px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full transition-all cursor-pointer"
-                            >
-                              Expand to 20 km
-                            </button>
-                            <button
-                              onClick={() => setRadiusKm(50)}
-                              className="px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full transition-all cursor-pointer"
-                            >
-                              Expand to 50 km
-                            </button>
-                            <button
-                              onClick={() => setRadiusKm('All')}
-                              className="px-4 py-2 text-xs font-bold bg-[#5842fe] hover:bg-[#4a35ea] text-white rounded-full transition-all cursor-pointer shadow-lg shadow-[#5842fe]/30"
-                            >
-                              View All Venues ({activities.length})
-                            </button>
-                          </div>
+                          {radiusKm !== 'All' && (
+                            <div className="pt-2">
+                              <button
+                                onClick={() => setRadiusKm('All')}
+                                className="px-5 py-2.5 text-xs font-bold bg-[#5842fe] hover:bg-[#4a35ea] text-white rounded-full transition-all cursor-pointer shadow-lg shadow-[#5842fe]/30"
+                              >
+                                View All Venues (Ascending Order)
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1745,26 +1756,23 @@ export default function Discovery({
                       </h2>
                     </div>
                     <p className="text-xs text-neutral-400 mt-0.5">
-                      Showing all registered players ({dbPlayersList.length} athletes)
+                      Showing all registered players in ascending order by distance ({filteredDbPlayers.length} athletes)
+                      {radiusKm !== 'All' ? <span className="text-indigo-400 font-bold ml-1.5">• Radius filter: {radiusKm} km</span> : ''}
                     </p>
                   </div>
 
-                  <div className="flex items-center space-x-2 bg-[#0a0a0a] p-1.5 rounded-full border border-white/10 self-start sm:self-auto overflow-x-auto no-scrollbar">
-                    <span className="text-[10px] text-neutral-400 uppercase font-bold pl-3 pr-1">Max Distance:</span>
-                    {[5, 10, 20, 30, 50].map(r => (
-                      <button
-                        key={r}
-                        onClick={() => setRadiusKm(r)}
-                        className={`px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                          radiusKm === r
-                            ? 'bg-indigo-600 text-white font-black shadow-md'
-                            : 'text-neutral-400 hover:text-white'
-                        }`}
-                      >
-                        {r} km
-                      </button>
-                    ))}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(prev => !prev)}
+                    className={`px-4 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-2 self-start sm:self-auto ${
+                      showFilters || radiusKm !== 'All'
+                        ? 'bg-indigo-600/20 border-indigo-500/50 text-white shadow-md shadow-indigo-600/20'
+                        : 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-300 hover:text-white'
+                    }`}
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span>Filters {radiusKm !== 'All' ? `(${radiusKm} km)` : ''}</span>
+                  </button>
                 </div>
 
                 {playersLoading ? (
@@ -1772,17 +1780,31 @@ export default function Discovery({
                     <Loader2 className="w-6 h-6 animate-spin" />
                     <span className="text-sm font-bold">Searching for registered players...</span>
                   </div>
-                ) : dbPlayersList.length === 0 ? (
-                  <div className="glass-card p-12 text-center border border-dashed border-white/10 space-y-3">
+                ) : filteredDbPlayers.length === 0 ? (
+                  <div className="glass-card p-12 text-center border border-dashed border-white/10 rounded-3xl space-y-3">
                     <Users className="w-10 h-10 text-neutral-600 mx-auto" />
-                    <h3 className="text-white font-bold text-base">No users found</h3>
+                    <h3 className="text-white font-bold text-base">
+                      {radiusKm !== 'All' ? `No Players Found Within ${radiusKm} km` : 'No Registered Players Found'}
+                    </h3>
                     <p className="text-neutral-500 text-xs max-w-md mx-auto">
-                      No matching registered player profiles found. Try searching by their Player ID (e.g. @handle) or name.
+                      {radiusKm !== 'All'
+                        ? `No registered athletes found within your ${radiusKm} km radius filter. Reset the filter to view all athletes.`
+                        : 'No matching registered player profiles found. Try searching by their Player ID (e.g. @handle) or name.'}
                     </p>
+                    {radiusKm !== 'All' && (
+                      <div className="pt-2">
+                        <button
+                          onClick={() => setRadiusKm('All')}
+                          className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-all cursor-pointer shadow-lg shadow-indigo-600/30"
+                        >
+                          View All Players (Ascending Order)
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {dbPlayersList.map((player) => {
+                    {filteredDbPlayers.map((player) => {
                       const isFollowing = followedPlayers.includes(player.id);
                       const displayPlayerId = player.player_id || player.handle || (player.username ? (player.username.startsWith('@') ? player.username : `@${player.username}`) : `@athlete_${String(player.id).slice(-4)}`);
                       return (
