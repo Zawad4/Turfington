@@ -62,7 +62,7 @@ export default function Discovery({
   const [selectedDealsVenue, setSelectedDealsVenue] = useState(null);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [nearYouSubTab, setNearYouSubTab] = useState('venues'); // 'venues' | 'join_games' | 'all'
+  const [nearYouSubTab, setNearYouSubTab] = useState('venues'); // 'venues' | 'join_games'
   const [activeTab, setActiveTab] = useState('Near You');
   const [radiusKm, setRadiusKm] = useState(5); // Default 5 km radius; manual expansion by player
   const [selectedMarker, setSelectedMarker] = useState(null);
@@ -1090,58 +1090,49 @@ export default function Discovery({
 
               return (
                 <div className="space-y-8">
-                  {/* Sub-Section Navigation Switcher Pills */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-4 border border-white/5 rounded-2xl">
-                    <div className="flex items-center space-x-2.5">
-                      <div className="p-2.5 bg-[#5842fe]/10 rounded-xl text-[#5842fe] border border-[#5842fe]/20">
-                        <MapPin className="w-5 h-5" />
+                  {/* Sub-Section Navigation Switcher Bar */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 p-5 sm:p-6 bg-[#121218]/90 border border-white/10 rounded-3xl shadow-2xl backdrop-blur-xl">
+                    <div className="flex items-center space-x-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-[#5842fe]/15 text-[#5842fe] border border-[#5842fe]/30 flex items-center justify-center shadow-lg shadow-[#5842fe]/20 flex-shrink-0">
+                        <MapPin className="w-6 h-6" />
                       </div>
                       <div>
-                        <h2 className="font-display font-black text-white text-base uppercase tracking-tight">Near You</h2>
-                        <p className="text-[11px] text-neutral-400">Venues first, followed by active join-game sessions</p>
+                        <h2 className="font-display font-black text-white text-xl sm:text-2xl uppercase tracking-tight">Near You</h2>
+                        <p className="text-xs sm:text-sm text-neutral-400 font-medium mt-0.5">Explore turf venues or jump directly into join-game matches</p>
                       </div>
                     </div>
 
-                    {/* Sub-section Switcher Pills: Venues first, Join Games next */}
-                    <div className="flex items-center space-x-1.5 bg-[#0a0a0a] p-1.5 rounded-full border border-white/10 self-start sm:self-auto overflow-x-auto no-scrollbar">
+                    {/* Sub-section Switcher: Venues vs Join Games */}
+                    <div className="flex items-center gap-2 bg-[#09090e] p-2 rounded-2xl md:rounded-full border border-white/15 shadow-inner w-full md:w-auto">
                       <button
                         type="button"
                         onClick={() => setNearYouSubTab('venues')}
-                        className={`px-4 py-2 rounded-full text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                        className={`flex-1 md:flex-initial px-6 py-3 rounded-xl md:rounded-full text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-2.5 ${
                           nearYouSubTab === 'venues'
-                            ? 'bg-[#5842fe] text-white shadow-lg shadow-[#5842fe]/30'
-                            : 'text-neutral-400 hover:text-white'
+                            ? 'bg-gradient-to-r from-[#5842fe] to-[#6d55ff] text-white shadow-xl shadow-[#5842fe]/40 border border-white/20'
+                            : 'text-neutral-400 hover:text-white hover:bg-white/5 border border-transparent'
                         }`}
                       >
-                        <span>🏟️ Venues</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${nearYouSubTab === 'venues' ? 'bg-white/20 text-white' : 'bg-white/5 text-neutral-400'}`}>
+                        <span className="text-base">🏟️</span>
+                        <span className="tracking-wide">Venues</span>
+                        <span className={`text-xs font-black px-2.5 py-0.5 rounded-full ${nearYouSubTab === 'venues' ? 'bg-white/25 text-white shadow-sm' : 'bg-white/10 text-neutral-300'}`}>
                           {nearbyList.length}
                         </span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setNearYouSubTab('join_games')}
-                        className={`px-4 py-2 rounded-full text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
+                        className={`flex-1 md:flex-initial px-6 py-3 rounded-xl md:rounded-full text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-2.5 ${
                           nearYouSubTab === 'join_games'
-                            ? 'bg-[#5842fe] text-white shadow-lg shadow-[#5842fe]/30'
-                            : 'text-neutral-400 hover:text-white'
+                            ? 'bg-gradient-to-r from-[#5842fe] to-[#6d55ff] text-white shadow-xl shadow-[#5842fe]/40 border border-white/20'
+                            : 'text-neutral-400 hover:text-white hover:bg-white/5 border border-transparent'
                         }`}
                       >
-                        <span>🎮 Join Games</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${nearYouSubTab === 'join_games' ? 'bg-white/20 text-white' : 'bg-white/5 text-neutral-400'}`}>
+                        <span className="text-base">🎮</span>
+                        <span className="tracking-wide">Join Games</span>
+                        <span className={`text-xs font-black px-2.5 py-0.5 rounded-full ${nearYouSubTab === 'join_games' ? 'bg-white/25 text-white shadow-sm' : 'bg-white/10 text-neutral-300'}`}>
                           {filteredActivities.length}
                         </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNearYouSubTab('all')}
-                        className={`px-3.5 py-2 rounded-full text-xs font-black transition-all cursor-pointer ${
-                          nearYouSubTab === 'all'
-                            ? 'bg-white text-black font-extrabold shadow-md'
-                            : 'text-neutral-400 hover:text-white'
-                        }`}
-                      >
-                        <span>⚡ View Both</span>
                       </button>
                     </div>
                   </div>
@@ -1149,7 +1140,7 @@ export default function Discovery({
                   {/* ─────────────────────────────────────────────────────────── */}
                   {/* SUB-SECTION 1: 🏟️ VENUES (FIRST)                            */}
                   {/* ─────────────────────────────────────────────────────────── */}
-                  {(nearYouSubTab === 'venues' || nearYouSubTab === 'all') && (
+                  {nearYouSubTab === 'venues' && (
                     <div className="space-y-6">
                       {/* Header & Radius Filter Bar */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 border border-white/5 rounded-2xl">
@@ -1398,7 +1389,7 @@ export default function Discovery({
                   {/* ─────────────────────────────────────────────────────────── */}
                   {/* SUB-SECTION 2: 🎮 JOIN GAMES (NEXT)                          */}
                   {/* ─────────────────────────────────────────────────────────── */}
-                  {(nearYouSubTab === 'join_games' || nearYouSubTab === 'all') && (
+                  {nearYouSubTab === 'join_games' && (
                     <div className="space-y-6 pt-2">
                       <div className="glass-card p-5 border border-white/5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
