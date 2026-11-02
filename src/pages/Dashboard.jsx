@@ -601,6 +601,7 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
             <Tooltip 
               contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11, color: '#fff' }} 
               formatter={(val) => [`${val} ${val === 1 ? 'session' : 'sessions'}`, 'Activity']}
+              cursor={{ fill: 'rgba(255, 255, 255, 0.04)', radius: 6 }}
             />
             <Bar dataKey="sessions" fill="url(#playerGrad)" radius={[6, 6, 0, 0]} />
             <defs>
@@ -1091,7 +1092,10 @@ function OwnerDashboard({ user }) {
           <BarChart data={weeklyChartData} barGap={4}>
             <XAxis dataKey="day" tick={{ fill: '#525252', fontSize: 11 }} axisLine={false} tickLine={false} />
             <YAxis hide />
-            <Tooltip contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} />
+            <Tooltip 
+              contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} 
+              cursor={{ fill: 'rgba(255, 255, 255, 0.04)', radius: 6 }}
+            />
             <Bar dataKey="bookings"  name="Bookings"      fill="#6366f1" radius={[4,4,0,0]} />
             <Bar dataKey="cancelled" name="Cancellations" fill="#f43f5e" radius={[4,4,0,0]} />
           </BarChart>
