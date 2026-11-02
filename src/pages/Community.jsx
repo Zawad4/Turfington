@@ -23,7 +23,8 @@ import {
   registerDeviceToken,
   ensureDefaultCommunityData,
   markConversationAsRead,
-  SYSTEM_DEFAULT_GROUP_IDS
+  SYSTEM_DEFAULT_GROUP_IDS,
+  isSystemDefaultGroup
 } from '../services/chatService';
 import { apiFetchAthletes, apiSearchUsers, apiFollowUser, NPC_TEST_USER_IDS } from '../services/db';
 import { getLocalFollowing, toggleFollowUser } from '../services/followService';
@@ -279,7 +280,8 @@ export default function Community({ user, setTab }) {
     // 2. Subscribe to Community Groups (communityGroups/{groupId})
     const unsubGroups = subscribeToCommunityGroups(selectedSport, (groups) => {
       if (!isMounted) return;
-      const validGroups = (groups || []).filter(g => 
+      const validGroups = (groups || []).filter(g =>
+        !isSystemDefaultGroup(g) &&
         !SYSTEM_DEFAULT_GROUP_IDS.has(g.groupId || g.id) &&
         g.creatorUid !== 'turfington_official' &&
         g.created_by !== 'turfington_official'
@@ -528,6 +530,7 @@ export default function Community({ user, setTab }) {
   // Filtered lists
   const filteredHubs = useMemo(() => {
     return communityGroups.filter(group => {
+      if (isSystemDefaultGroup(group)) return false;
       const gid = group.groupId || group.id;
       if (SYSTEM_DEFAULT_GROUP_IDS.has(gid) || group.creatorUid === 'turfington_official' || group.created_by === 'turfington_official') {
         return false;
@@ -639,7 +642,7 @@ export default function Community({ user, setTab }) {
       auth_provider: 'google',
       is_google_user: true,
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${cleanEmail}`,
-      sport: 'Google Athlete',
+      sport: 'Sports Athlete',
       location: 'Direct Recipient',
       isDirectInvite: true
     };
@@ -717,7 +720,7 @@ export default function Community({ user, setTab }) {
       auth_provider: 'google',
       is_google_user: true,
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${cleanEmail}`,
-      sport: 'Google Athlete',
+      sport: 'Sports Athlete',
       location: 'Direct Recipient',
       isDirectInvite: true
     };

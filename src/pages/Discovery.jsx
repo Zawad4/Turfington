@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import SportIcon from '../components/SportIcon';
 import VenueImage from '../components/VenueImage';
+import UserAvatar from '../components/UserAvatar';
 import { apiFetchTurfs, apiFetchNearbyTurfs, apiCreateBooking, apiUpdateBookingStatus, apiFetchNearbyPlayers, apiSearchUsers, apiFollowUser, apiCreateDirectChat, apiSubscribeVenues, apiCreateHostedMatch, apiFetchHostedMatches, apiJoinHostedMatch, apiLeaveHostedMatch } from '../services/db';
 import { openRazorpayCheckout } from '../services/razorpay';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
@@ -936,9 +937,9 @@ export default function Discovery({
         </button>
       </div>
 
-      {/* TABS SELECTOR */}
+      {/* TABS SELECTOR: Consolidated into Near You, Players, and Map */}
       <div className="flex space-x-1.5 p-1 bg-[#121212] border border-white/5 rounded-full self-start mb-8 overflow-x-auto no-scrollbar max-w-full font-sans">
-        {['Near You', 'Players', 'Activities', 'Venues', 'Events', 'Map'].map(tab => (
+        {['Near You', 'Players', 'Map'].map(tab => (
           <button
             key={tab}
             onClick={() => {
@@ -951,7 +952,7 @@ export default function Discovery({
                 : 'text-neutral-400 hover:text-white'
             }`}
           >
-            {tab === 'Near You' ? '🏟 Near You' : tab === 'Players' ? '🏃 Players' : tab}
+            {tab === 'Near You' ? '🏟 Near You' : tab === 'Players' ? '🏃 Players' : '🗺️ Map'}
           </button>
         ))}
       </div>
@@ -1658,10 +1659,9 @@ export default function Discovery({
                         >
                           <div className="space-y-4">
                             <div className="flex items-center space-x-3.5">
-                              <img
-                                src={player.avatar_url || player.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${player.id}`}
-                                alt={player.full_name || player.name}
-                                className="w-13 h-13 rounded-full object-cover border-2 border-indigo-500/30 group-hover:border-indigo-400 transition-colors"
+                              <UserAvatar
+                                user={player}
+                                className="w-13 h-13 text-base border-2 border-indigo-500/30 group-hover:border-indigo-400 transition-colors shrink-0"
                               />
                               <div className="text-left overflow-hidden">
                                 <h3 className="font-bold text-white text-base truncate group-hover:text-indigo-400 transition-colors">
@@ -2429,10 +2429,9 @@ export default function Discovery({
               {/* Player Info Body */}
               <div className="p-6 pt-0 relative">
                 <div className="flex items-end justify-between -mt-14 mb-4">
-                  <img
-                    src={selectedPlayerModal.avatar_url || selectedPlayerModal.avatar || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200'}
-                    alt={selectedPlayerModal.full_name}
-                    className="w-22 h-22 rounded-full object-cover border-4 border-[#080808] shadow-xl bg-neutral-900"
+                  <UserAvatar
+                    user={selectedPlayerModal}
+                    className="w-22 h-22 text-2xl border-4 border-[#080808] shadow-xl shrink-0"
                   />
 
                   <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full border ${

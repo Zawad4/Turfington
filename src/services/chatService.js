@@ -200,6 +200,17 @@ export const SYSTEM_DEFAULT_GROUP_IDS = new Set([
   'group_bowling_strikes'
 ]);
 
+export function isSystemDefaultGroup(g) {
+  if (!g) return false;
+  const gid = String(g.groupId || g.id || g.conversationId || '').toLowerCase();
+  const name = String(g.name || g.title || g.groupName || '').toLowerCase();
+  const creator = String(g.creatorUid || g.created_by || '').toLowerCase();
+  if (SYSTEM_DEFAULT_GROUP_IDS.has(gid)) return true;
+  if (creator === 'turfington_official' || creator === 'system' || creator === 'admin') return true;
+  if (name.includes('box cricket') || name.includes('football turf') || name.includes('smashers badminton') || name.includes('pickleball & padel') || name.includes('pickleball society') || name.includes('table tennis warriors') || name.includes('table tennis pro') || name.includes('strike bowling') || name.includes('strike force')) return true;
+  return false;
+}
+
 export const DEFAULT_COMMUNITY_GROUPS_CONFIG = [];
 
 // ─────────────────────────────────────────────────────────────
@@ -1537,11 +1548,7 @@ export function subscribeToCommunityGroups(sportFilter = 'All', callback) {
     if (rawLocal) {
       const parsed = JSON.parse(rawLocal);
       if (Array.isArray(parsed)) {
-        const cleaned = parsed.filter(g => 
-          !SYSTEM_DEFAULT_GROUP_IDS.has(g.groupId || g.id) &&
-          g.creatorUid !== 'turfington_official' &&
-          g.created_by !== 'turfington_official'
-        );
+        const cleaned = parsed.filter(g => !isSystemDefaultGroup(g));
         if (cleaned.length !== parsed.length) {
           localStorage.setItem('turfington_community_groups', JSON.stringify(cleaned));
         }
@@ -1572,11 +1579,7 @@ export function subscribeToCommunityGroups(sportFilter = 'All', callback) {
             imageUrl: data.imageUrl || data.avatar
           };
         })
-        .filter(g => 
-          !SYSTEM_DEFAULT_GROUP_IDS.has(g.groupId || g.id) &&
-          g.creatorUid !== 'turfington_official' &&
-          g.created_by !== 'turfington_official'
-        );
+        .filter(g => !isSystemDefaultGroup(g));
 
       try {
         localStorage.setItem('turfington_community_groups', JSON.stringify(groups));
@@ -1587,11 +1590,7 @@ export function subscribeToCommunityGroups(sportFilter = 'All', callback) {
       try {
         const rawLocal = localStorage.getItem('turfington_community_groups');
         const parsed = rawLocal ? JSON.parse(rawLocal) : [];
-        const cleaned = parsed.filter(g => 
-          !SYSTEM_DEFAULT_GROUP_IDS.has(g.groupId || g.id) &&
-          g.creatorUid !== 'turfington_official' &&
-          g.created_by !== 'turfington_official'
-        );
+        const cleaned = parsed.filter(g => !isSystemDefaultGroup(g));
         const filtered = (sportFilter && sportFilter !== 'All')
           ? cleaned.filter(g => g.sportCategory === sportFilter || g.sport === sportFilter)
           : cleaned;
@@ -1669,7 +1668,7 @@ export async function ensureDefaultCommunityData(currentUser) {
       // Also clean default groups from current user inbox in local storage
       const uid = currentUser?.uid || currentUser?.id || currentUser?.firebase_uid;
       if (uid) {
-        const inboxKey = 	urfington_inbox_;
+        const inboxKey = `turfington_inbox_${uid}`;
         const existingInbox = JSON.parse(localStorage.getItem(inboxKey) || '[]');
         const cleanedInbox = existingInbox.filter(item => 
           !SYSTEM_DEFAULT_GROUP_IDS.has(item.conversationId || item.id || item.groupId) &&

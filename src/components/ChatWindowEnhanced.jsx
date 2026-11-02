@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send, Paperclip, Smile, Image as ImageIcon, Check, CheckCheck,
@@ -72,6 +72,7 @@ export default function ChatWindowEnhanced({
   const [typingUsers, setTypingUsers] = useState(new Set());
   const [onlinePresence, setOnlinePresence] = useState({});
   const typingTimeoutRef = useRef(null);
+  const sendingLockRef = useRef(false);
   const realtimeRef = useRef(null);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -151,39 +152,62 @@ export default function ChatWindowEnhanced({
       return isNaN(parsed) ? 0 : parsed;
     };
 
+    const isMsgFromSelf = (m) => {
+      if (!m) return false;
+      if (m.self || m.user === 'You') return true;
+      const s = String(m.senderUid || m.sender_id || m.senderId || '').trim().toLowerCase();
+      if (s) {
+        if (currentUserId && s === String(currentUserId).trim().toLowerCase()) return true;
+        if (currentUser?.uid && s === String(currentUser.uid).trim().toLowerCase()) return true;
+        if (currentUser?.id && s === String(currentUser.id).trim().toLowerCase()) return true;
+        if (currentUser?.email && s === String(currentUser.email).trim().toLowerCase()) return true;
+      }
+      const u = String(m.user || m.senderName || m.sender?.full_name || '').trim().toLowerCase();
+      if (u && currentUserName && u === String(currentUserName).trim().toLowerCase()) return true;
+      return false;
+    };
+
     messages.forEach(msg => {
       if (!msg) return;
       const id = msg.id || msg.idempotency_key || msg.idempotencyKey;
       if (id && seenIds.has(id)) return;
 
-      const sender = msg.senderUid || msg.sender_id || msg.senderId || msg.user;
+      const self = isMsgFromSelf(msg);
+      const sender = String(msg.senderUid || msg.sender_id || msg.senderId || msg.user || '').trim().toLowerCase();
       const text = (msg.text || msg.content || '').trim();
       const time = parseTime(msg);
 
       // Check if duplicate of an existing message in result
-      const isDup = result.some(prev => {
+      const dupIdx = result.findIndex(prev => {
         const prevId = prev.id || prev.idempotency_key || prev.idempotencyKey;
         if (id && prevId && id === prevId) return true;
-        const prevSender = prev.senderUid || prev.sender_id || prev.senderId || prev.user;
+
+        const prevSelf = isMsgFromSelf(prev);
+        const prevSender = String(prev.senderUid || prev.sender_id || prev.senderId || prev.user || '').trim().toLowerCase();
         const prevText = (prev.text || prev.content || '').trim();
         const prevTime = parseTime(prev);
-        // If same sender, same text, and within 20s, it's the exact same message
-        return (
-          prevSender === sender &&
-          prevText === text &&
-          text.length > 0 &&
-          Math.abs(prevTime - time) < 20000
-        );
+
+        if (prevText === text && text.length > 0) {
+          const sameSender = (self && prevSelf) || (sender && prevSender && sender === prevSender);
+          if (sameSender) {
+            const timeDiff = Math.abs(prevTime - time);
+            if (!prevTime || !time || timeDiff < 60000) return true;
+          }
+        }
+        return false;
       });
 
-      if (!isDup) {
+      if (dupIdx >= 0) {
+        result[dupIdx] = { ...result[dupIdx], ...msg, id: result[dupIdx].id || msg.id };
+        if (id) seenIds.add(id);
+      } else {
         if (id) seenIds.add(id);
         result.push(msg);
       }
     });
 
     return result;
-  }, [messages]);
+  }, [messages, currentUserId, currentUserName, currentUser]);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -239,6 +263,9 @@ export default function ChatWindowEnhanced({
     }
     if (!conversationId) return;
     if (!input.trim() && attachments.length === 0) return;
+    if (sendingLockRef.current) return;
+    sendingLockRef.current = true;
+    setTimeout(() => { sendingLockRef.current = false; }, 500);
 
     const textToSend = input.trim();
     const currentReply = replyToMsg;

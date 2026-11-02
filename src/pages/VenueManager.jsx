@@ -1338,14 +1338,22 @@ export default function VenueManager({ user, venueOffers, setVenueOffers }) {
   useEffect(() => {
     const loadOwnerVenues = async () => {
       const ownerId = user?.id || user?.uid || user?.firebase_uid;
-      if (!ownerId) {
+      const ownerEmail = user?.email;
+      const ownerName = user?.full_name || user?.name;
+      if (!ownerId && !ownerEmail) {
         setVenues([]);
         return;
       }
-      const dbVenues = await apiFetchVenues({ ownerId });
+      const dbVenues = await apiFetchVenues({
+        ownerId,
+        ownerUid: user?.firebase_uid || user?.uid,
+        ownerEmail,
+        ownerName
+      });
       if (dbVenues && dbVenues.length > 0) {
         const formatted = dbVenues.map(v => ({
           id: v.id,
+          owner_id: v.owner_id || ownerId,
           name: v.name,
           location: `${v.address || ''}, ${v.city || ''}`,
           sports: v.sports || [v.sport || 'Football'],
@@ -1355,7 +1363,13 @@ export default function VenueManager({ user, venueOffers, setVenueOffers }) {
           totalSlots: 24,
           bookedToday: 0,
           revenue: { week: 0, month: 0 },
-          slots: generateSlots(),
+          slots: (() => {
+            try {
+              const s = localStorage.getItem('turfington_venue_slots_' + v.id);
+              if (s) return JSON.parse(s);
+            } catch {}
+            return v.slots || generateSlots();
+          })(),
           active: true,
           description: v.surface || 'Synthetic Turf Venue'
         }));
@@ -1365,17 +1379,27 @@ export default function VenueManager({ user, venueOffers, setVenueOffers }) {
       }
     };
     loadOwnerVenues();
-  }, [user?.id, user?.uid, user?.firebase_uid]);
+
+    const handleVenuesUpdated = () => { loadOwnerVenues(); };
+    window.addEventListener('turfington_venues_updated', handleVenuesUpdated);
+    return () => {
+      window.removeEventListener('turfington_venues_updated', handleVenuesUpdated);
+    };
+  }, [user?.id, user?.uid, user?.firebase_uid, user?.email]);
 
   const handleAdd = async (newVenueData) => {
     const currentOwnerId = user?.id || user?.firebase_uid || user?.uid;
-    if (!currentOwnerId) {
+    const currentOwnerEmail = user?.email || '';
+    const currentOwnerName = user?.full_name || user?.name || 'Venue Owner';
+    if (!currentOwnerId && !currentOwnerEmail) {
       alert('Authentication required: please log in as a venue owner.');
       return;
     }
     const dbRes = await apiCreateVenue({
       owner_id: currentOwnerId,
-      owner_name: user?.full_name || user?.name || 'Ayesha Khaan',
+      owner_uid: user?.firebase_uid || user?.uid || '',
+      owner_email: currentOwnerEmail,
+      owner_name: currentOwnerName,
       name: newVenueData.name,
       sport: newVenueData.sports?.[0] || 'Football',
       sports: newVenueData.sports || [newVenueData.sports?.[0] || 'Football'],
@@ -1389,7 +1413,10 @@ export default function VenueManager({ user, venueOffers, setVenueOffers }) {
     });
 
     const newVenue = {
-      id: dbRes?.venue?.id || Date.now(),
+      id: dbRes?.venue?.id || ('venue_' + Date.now()),
+      owner_id: currentOwnerId,
+      owner_email: currentOwnerEmail,
+      owner_name: currentOwnerName,
       name: newVenueData.name,
       location: newVenueData.location,
       latitude: newVenueData.latitude,
@@ -1404,7 +1431,7 @@ export default function VenueManager({ user, venueOffers, setVenueOffers }) {
       slots: generateSlots(),
       active: true
     };
-    setVenues(prev => [newVenue, ...prev]);
+    setVenues(prev => [newVenue, ...prev.filter(v => v.id !== newVenue.id)]);
   };
 
   const handleToggleActive = (id) => {
@@ -1414,9 +1441,13 @@ export default function VenueManager({ user, venueOffers, setVenueOffers }) {
   const handleUpdateSlot = (venueId, day, time, newStatus) => {
     setVenues(prev => prev.map(v => {
       if (v.id !== venueId) return v;
+      const updatedSlots = { ...v.slots, [day]: { ...(v.slots[day] || {}), [time]: newStatus } };
+      try {
+        localStorage.setItem('turfington_venue_slots_' + venueId, JSON.stringify(updatedSlots));
+      } catch {}
       return {
         ...v,
-        slots: { ...v.slots, [day]: { ...(v.slots[day] || {}), [time]: newStatus } }
+        slots: updatedSlots
       };
     }));
   };

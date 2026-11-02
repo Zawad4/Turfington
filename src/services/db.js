@@ -17,7 +17,6 @@ import {
   arrayUnion,
   arrayRemove,
   increment,
-  or
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
@@ -1564,7 +1563,7 @@ export async function apiSendMessage(conversationId, senderId, content, replyToI
   try {
     const messagesRef = collection(db, 'conversations', conversationId, 'messages');
     const senderName = senderInfo?.name || senderInfo?.full_name || senderInfo?.user || 'Athlete';
-    const senderAvatar = senderInfo?.avatar || senderInfo?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${senderId}`;
+    const senderAvatar = senderInfo?.avatar || senderInfo?.avatar_url || '';
 
     const msgData = {
       conversation_id: conversationId,
@@ -2261,8 +2260,45 @@ export async function apiFetchVenues(filters = {}) {
   let customVenues = [];
   try {
     const s = localStorage.getItem('turfington_custom_venues');
-    if (s) customVenues = JSON.parse(s);
+    if (s) {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) customVenues = parsed;
+    }
   } catch {}
+
+  // Check owner-specific storage keys
+  const ownerCandidates = new Set();
+  const addCand = (val) => {
+    if (val && typeof val === 'string' && val.trim()) {
+      ownerCandidates.add(val.trim().toLowerCase());
+    }
+  };
+  addCand(filters.ownerId);
+  addCand(filters.owner_id);
+  addCand(filters.ownerUid);
+  addCand(filters.ownerEmail);
+  addCand(filters.owner_email);
+  addCand(filters.ownerName);
+  addCand(filters.owner_name);
+
+  if (filters.ownerId) {
+    try {
+      const s = localStorage.getItem(`turfington_owner_venues_${filters.ownerId}`);
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (Array.isArray(parsed)) customVenues = [...customVenues, ...parsed];
+      }
+    } catch {}
+  }
+  if (filters.ownerEmail) {
+    try {
+      const s = localStorage.getItem(`turfington_owner_venues_${filters.ownerEmail}`);
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (Array.isArray(parsed)) customVenues = [...customVenues, ...parsed];
+      }
+    } catch {}
+  }
 
   let apiVenues = [];
   try {
@@ -2280,11 +2316,7 @@ export async function apiFetchVenues(filters = {}) {
 
   let dbVenues = [];
   try {
-    let q = collection(db, 'venues');
-    if (filters.ownerId) {
-      q = query(q, where('owner_id', '==', filters.ownerId));
-    }
-    const snap = await getDocs(q);
+    const snap = await getDocs(collection(db, 'venues'));
     if (!snap.empty) {
       dbVenues = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
@@ -2332,19 +2364,37 @@ export async function apiFetchVenues(filters = {}) {
       image: resolvedImage,
       rating: v.rating || 5.0,
       owner_id: v.owner_id || v.ownerId || null,
-      isNew: v.isNew ?? (String(v.id).startsWith('venue_') || v.owner_id != null),
-      owner_name: v.owner_name || v.ownerName || null
+      owner_uid: v.owner_uid || null,
+      owner_email: v.owner_email || null,
+      owner_name: v.owner_name || v.ownerName || null,
+      isNew: v.isNew ?? (String(v.id).startsWith('venue_') || v.owner_id != null)
     });
   });
 
   let allVenues = Array.from(map.values());
-  if (filters.ownerId) {
-    allVenues = allVenues.filter(v => 
-      v.owner_id === filters.ownerId || 
-      v.ownerId === filters.ownerId ||
-      (String(filters.ownerId).toLowerCase().includes('ayesha') && (v.owner_id === 'ayesha_khaan_owner' || String(v.name || '').toLowerCase().includes('bridgestone'))) ||
-      (v.owner_id === 'ayesha_khaan_owner' && (filters.isAyesha || String(filters.ownerName || '').toLowerCase().includes('ayesha') || String(filters.ownerEmail || '').toLowerCase().includes('ayesha')))
-    );
+  if (ownerCandidates.size > 0) {
+    allVenues = allVenues.filter(v => {
+      if (!v) return false;
+      const vOwnerId = String(v.owner_id || v.ownerId || '').trim().toLowerCase();
+      const vOwnerUid = String(v.owner_uid || '').trim().toLowerCase();
+      const vOwnerEmail = String(v.owner_email || '').trim().toLowerCase();
+      const vOwnerName = String(v.owner_name || v.ownerName || '').trim().toLowerCase();
+      
+      if (vOwnerId && ownerCandidates.has(vOwnerId)) return true;
+      if (vOwnerUid && ownerCandidates.has(vOwnerUid)) return true;
+      if (vOwnerEmail && ownerCandidates.has(vOwnerEmail)) return true;
+      if (vOwnerName && ownerCandidates.has(vOwnerName)) return true;
+
+      // Special check for Ayesha Khaan
+      const isAyeshaSearch = Array.from(ownerCandidates).some(c => c.includes('ayesha') || c === 'owner123@gmail.cpm' || c === 'owner123@gmail.com');
+      if (isAyeshaSearch) {
+        if (vOwnerId === 'ayesha_khaan_owner' || vOwnerName.includes('ayesha') || String(v.name || '').toLowerCase().includes('bridgestone')) {
+          return true;
+        }
+      }
+
+      return false;
+    });
   }
   return allVenues;
 }
@@ -2542,7 +2592,7 @@ export async function apiCreateVenue(venueData) {
   const resolvedImg = venueData.image || venueData.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800';
 
   const customVenue = {
-    id: 'venue_' + Date.now(),
+    id: venueData.id || ('venue_' + Date.now()),
     name: venueData.name,
     venue: venueData.name,
     category: venueData.sport || sportsArr[0] || 'Sports',
@@ -2564,7 +2614,9 @@ export async function apiCreateVenue(venueData) {
     description: venueData.description || 'Newly added sports venue on Turfington.',
     is_open_24_hours: true,
     isNew: true,
-    owner_id: venueData.owner_id || 'usr_venue_owner',
+    owner_id: venueData.owner_id || venueData.ownerId || 'usr_venue_owner',
+    owner_uid: venueData.owner_uid || '',
+    owner_email: (venueData.owner_email || '').toLowerCase().trim(),
     owner_name: venueData.owner_name || 'Venue Owner',
     created_at: new Date().toISOString()
   };
@@ -2576,6 +2628,14 @@ export async function apiCreateVenue(venueData) {
     const updated = [customVenue, ...existing.filter(v => v.name !== customVenue.name && v.id !== customVenue.id)];
     localStorage.setItem('turfington_custom_venues', JSON.stringify(updated));
     localStorage.setItem('turfington_venues_timestamp', Date.now().toString());
+
+    // Also persist under owner specific keys
+    if (customVenue.owner_id) {
+      localStorage.setItem(`turfington_owner_venues_${customVenue.owner_id}`, JSON.stringify(updated));
+    }
+    if (customVenue.owner_email) {
+      localStorage.setItem(`turfington_owner_venues_${customVenue.owner_email}`, JSON.stringify(updated));
+    }
   } catch {}
 
   // 2. Dispatch real-time window events (intra-tab)
@@ -2601,10 +2661,10 @@ export async function apiCreateVenue(venueData) {
     }).catch(() => {});
   } catch {}
 
-  // 5. Firestore sync to both venues and turfs collections
+  // 5. Firestore sync using deterministic document ID
   try {
-    addDoc(collection(db, 'venues'), customVenue).catch(() => {});
-    addDoc(collection(db, 'turfs'), customVenue).catch(() => {});
+    setDoc(doc(db, 'venues', customVenue.id), customVenue, { merge: true }).catch(() => {});
+    setDoc(doc(db, 'turfs', customVenue.id), customVenue, { merge: true }).catch(() => {});
   } catch {}
 
   return { success: true, venue: customVenue };
@@ -2828,10 +2888,32 @@ export async function apiUpdateBookingStatus(bookingId, status, rejectionReason 
   return { success: true };
 }
 
-export async function apiFetchOwnerBookings(ownerId) {
-  const targetOwnerId = typeof ownerId === 'object' && ownerId !== null
-    ? (ownerId.ownerId || ownerId.owner_id || ownerId.id || ownerId.uid)
-    : ownerId;
+export async function apiFetchOwnerBookings(ownerQuery) {
+  const ownerCandidates = new Set();
+  const addCand = (val) => {
+    if (val && typeof val === 'string' && val.trim()) {
+      ownerCandidates.add(val.trim().toLowerCase());
+    }
+  };
+
+  if (typeof ownerQuery === 'object' && ownerQuery !== null) {
+    addCand(ownerQuery.ownerId);
+    addCand(ownerQuery.owner_id);
+    addCand(ownerQuery.ownerUid);
+    addCand(ownerQuery.ownerEmail);
+    addCand(ownerQuery.owner_email);
+    addCand(ownerQuery.ownerName);
+    addCand(ownerQuery.owner_name);
+    addCand(ownerQuery.id);
+    addCand(ownerQuery.uid);
+  } else if (typeof ownerQuery === 'string') {
+    addCand(ownerQuery);
+  }
+
+  // Collect all venues owned by this owner
+  const ownerVenues = await apiFetchVenues(typeof ownerQuery === 'object' ? ownerQuery : { ownerId: ownerQuery });
+  const ownerVenueIds = new Set(ownerVenues.map(v => String(v.id).toLowerCase()));
+  const ownerVenueNames = new Set(ownerVenues.map(v => String(v.name || v.venue || '').toLowerCase().trim()));
 
   let localBookings = [];
   try {
@@ -2850,34 +2932,66 @@ export async function apiFetchOwnerBookings(ownerId) {
     }
   } catch {}
 
-  let dbBookings = [];
-  if (targetOwnerId && typeof targetOwnerId === 'string' && targetOwnerId.trim() !== '') {
+  // Check owner specific bookings storage
+  ownerCandidates.forEach(cand => {
     try {
-      const q = query(collection(db, 'bookings'), where('owner_id', '==', targetOwnerId.trim()));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        dbBookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const sO = localStorage.getItem(`turfington_owner_bookings_${cand}`);
+      if (sO) {
+        const pO = JSON.parse(sO);
+        if (Array.isArray(pO)) localBookings = [...localBookings, ...pO];
       }
-    } catch (err) {}
-  }
+    } catch {}
+  });
+
+  let dbBookings = [];
+  try {
+    const snap = await getDocs(collection(db, 'bookings'));
+    if (!snap.empty) {
+      dbBookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+  } catch (err) {}
 
   const map = new Map();
   [...dbBookings, ...localBookings].forEach(b => {
-    if (b && b.id) {
-      if (targetOwnerId) {
-        if (b.owner_id === targetOwnerId || b.ownerId === targetOwnerId) {
-          map.set(String(b.id), b);
+    if (!b || !b.id) return;
+    const bOwnerId = String(b.owner_id || b.ownerId || '').trim().toLowerCase();
+    const bOwnerUid = String(b.owner_uid || '').trim().toLowerCase();
+    const bOwnerEmail = String(b.owner_email || '').trim().toLowerCase();
+    const bOwnerName = String(b.owner_name || b.ownerName || '').trim().toLowerCase();
+    const bVenueId = String(b.venue_id || b.venueId || '').trim().toLowerCase();
+    const bVenueName = String(b.venue || b.venue_name || b.title || '').trim().toLowerCase();
+
+    let matches = false;
+    if (ownerCandidates.size > 0) {
+      if (bOwnerId && ownerCandidates.has(bOwnerId)) matches = true;
+      if (bOwnerUid && ownerCandidates.has(bOwnerUid)) matches = true;
+      if (bOwnerEmail && ownerCandidates.has(bOwnerEmail)) matches = true;
+      if (bOwnerName && ownerCandidates.has(bOwnerName)) matches = true;
+      if (bVenueId && ownerVenueIds.has(bVenueId)) matches = true;
+      if (bVenueName && ownerVenueNames.has(bVenueName)) matches = true;
+
+      // Also check special case for Ayesha Khaan
+      const isAyeshaSearch = Array.from(ownerCandidates).some(c => c.includes('ayesha') || c === 'owner123@gmail.cpm' || c === 'owner123@gmail.com');
+      if (isAyeshaSearch) {
+        if (bOwnerId === 'ayesha_khaan_owner' || bOwnerName.includes('ayesha') || bVenueName.includes('bridgestone')) {
+          matches = true;
         }
-      } else {
-        map.set(String(b.id), b);
       }
+    } else {
+      matches = true;
+    }
+
+    if (matches) {
+      map.set(String(b.id), b);
     }
   });
 
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) => {
+    return new Date(b.created_at || b.date || 0) - new Date(a.created_at || a.date || 0);
+  });
 }
 
-// -- 6. Community & Marketplace --------------------------------
+// ----------------------------------------------------------------------
 
 export async function apiFetchClubs() {
   try {
@@ -2926,7 +3040,7 @@ const DEFAULT_FEED_POSTS = [
   {
     id: 'post_501',
     author: 'Rahul Sharma',
-    avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Rahul',
+    avatar: '',
     time: '2 hours ago',
     content: 'Just booked the main court at Vanguard Arena for 7 PM tomorrow. We need 3 more players for a 5v5 friendly. Skill level: Intermediate. Let me know if you want in!',
     image: '/turf_story_highlight.png',
@@ -3130,7 +3244,7 @@ const INITIAL_MARKETPLACE_ITEMS = [
     description: 'Thermally bonded seamless surface match ball. Includes ball net and needle.',
     seller_id: 'usr_seller_4',
     sellerName: 'Aditya Nair',
-    sellerAvatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Aditya',
+    sellerAvatar: '',
     created_at: new Date().toISOString()
   }
 ];

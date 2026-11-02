@@ -109,7 +109,7 @@ export async function openRazorpayCheckout({
       name: 'Turfington Sports',
       description: `${title} - ${description}`,
       order_id: orderId,
-      image: 'https://api.dicebear.com/7.x/bottts/svg?seed=Turfington',
+      image: '/favicon.png',
       prefill: {
         name: user?.full_name || 'Player',
         email: user?.email || 'player@turfington.com',

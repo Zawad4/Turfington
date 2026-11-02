@@ -1,3 +1,4 @@
+import UserAvatar from '../components/UserAvatar';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -10,7 +11,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
-import { apiFetchBookings, apiFetchOwnerBookings, apiCreateDirectChat, apiFetchMessages, apiSendMessage, apiUpdateBookingStatus } from '../services/db';
+import { apiFetchBookings, apiFetchOwnerBookings, apiFetchVenues, apiCreateDirectChat, apiFetchMessages, apiSendMessage, apiUpdateBookingStatus } from '../services/db';
 import { formatTime12Hour } from '../utils/formatters';
 
 /* ════════════════════════════════════════════════════════════
@@ -648,41 +649,141 @@ const OWNER_BOOKINGS_WEEK = [
   { day: 'Sun', bookings: 22, cancelled: 1, revenue: 82500  },
 ];
 
-const SPORT_SPLIT = [
-  { name: 'Football', value: 42, color: '#10b981' },
-  { name: 'Badminton', value: 28, color: '#6366f1' },
-  { name: 'Table Tennis', value: 16, color: '#f43f5e' },
-  { name: 'Bowling', value: 14, color: '#06b6d4' },
-];
+const SPORT_COLORS = {
+  Football: '#10b981',
+  Badminton: '#6366f1',
+  Cricket: '#f59e0b',
+  Basketball: '#f97316',
+  Tennis: '#06b6d4',
+  'Table Tennis': '#f43f5e',
+  Kabaddi: '#8b5cf6',
+  Volleyball: '#ec4899',
+  Pickleball: '#14b8a6',
+  Bowling: '#eab308'
+};
+
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function OwnerDashboard({ user }) {
   const [recentBookings, setRecentBookings] = useState([]);
-  const [loadingBookings, setLoadingBookings] = useState(true);
+  const [ownerVenues, setOwnerVenues] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadOwnerBookings = async () => {
+    let isMounted = true;
+    const loadOwnerData = async () => {
       const ownerId = user?.id || user?.uid || user?.firebase_uid;
-      if (!ownerId) {
-        setRecentBookings([]);
-        setLoadingBookings(false);
+      const ownerEmail = user?.email;
+      const ownerName = user?.full_name || user?.name;
+
+      if (!ownerId && !ownerEmail) {
+        if (isMounted) {
+          setRecentBookings([]);
+          setOwnerVenues([]);
+          setLoading(false);
+        }
         return;
       }
-      setLoadingBookings(true);
-      const bks = await apiFetchOwnerBookings(ownerId);
-      setRecentBookings(Array.isArray(bks) ? bks : []);
-      setLoadingBookings(false);
+
+      setLoading(true);
+      const [bks, vns] = await Promise.all([
+        apiFetchOwnerBookings({ ownerId, ownerUid: user?.firebase_uid, ownerEmail, ownerName }),
+        apiFetchVenues({ ownerId, ownerUid: user?.firebase_uid, ownerEmail, ownerName })
+      ]);
+
+      if (isMounted) {
+        setRecentBookings(Array.isArray(bks) ? bks : []);
+        setOwnerVenues(Array.isArray(vns) ? vns : []);
+        setLoading(false);
+      }
     };
 
-    loadOwnerBookings();
-    const handleCreated = () => { loadOwnerBookings(); };
-    const handleUpdated = () => { loadOwnerBookings(); };
-    window.addEventListener('turfington_booking_created', handleCreated);
-    window.addEventListener('turfington_booking_updated', handleUpdated);
+    loadOwnerData();
+    const handleBookingCreated = () => { loadOwnerData(); };
+    const handleBookingUpdated = () => { loadOwnerData(); };
+    const handleVenuesUpdated = () => { loadOwnerData(); };
+
+    window.addEventListener('turfington_booking_created', handleBookingCreated);
+    window.addEventListener('turfington_booking_updated', handleBookingUpdated);
+    window.addEventListener('turfington_venues_updated', handleVenuesUpdated);
+
     return () => {
-      window.removeEventListener('turfington_booking_created', handleCreated);
-      window.removeEventListener('turfington_booking_updated', handleUpdated);
+      isMounted = false;
+      window.removeEventListener('turfington_booking_created', handleBookingCreated);
+      window.removeEventListener('turfington_booking_updated', handleBookingUpdated);
+      window.removeEventListener('turfington_venues_updated', handleVenuesUpdated);
     };
-  }, [user?.id, user?.uid, user?.firebase_uid]);
+  }, [user?.id, user?.uid, user?.firebase_uid, user?.email]);
+
+  // Dynamic weekly chart data computed strictly from real bookings
+  const weeklyChartData = React.useMemo(() => {
+    const dayMap = {
+      Mon: { day: 'Mon', bookings: 0, cancelled: 0, revenue: 0 },
+      Tue: { day: 'Tue', bookings: 0, cancelled: 0, revenue: 0 },
+      Wed: { day: 'Wed', bookings: 0, cancelled: 0, revenue: 0 },
+      Thu: { day: 'Thu', bookings: 0, cancelled: 0, revenue: 0 },
+      Fri: { day: 'Fri', bookings: 0, cancelled: 0, revenue: 0 },
+      Sat: { day: 'Sat', bookings: 0, cancelled: 0, revenue: 0 },
+      Sun: { day: 'Sun', bookings: 0, cancelled: 0, revenue: 0 },
+    };
+
+    recentBookings.forEach(b => {
+      if (!b) return;
+      let dayKey = null;
+      const rawDate = String(b.date || b.time || b.created_at || '');
+      for (const d of DAY_NAMES) {
+        if (rawDate.includes(d)) {
+          dayKey = d;
+          break;
+        }
+      }
+      if (!dayKey && b.created_at) {
+        try {
+          const dt = new Date(b.created_at);
+          const idx = dt.getDay(); // 0 is Sunday
+          dayKey = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][idx];
+        } catch {}
+      }
+      if (!dayKey) dayKey = 'Mon';
+
+      const p = typeof b.price === 'number' ? b.price : (parseInt(String(b.price || 0).replace(/\D/g, ''), 10) || 0);
+      const isCancelled = b.status === 'cancelled' || b.status === 'REJECTED';
+
+      if (isCancelled) {
+        dayMap[dayKey].cancelled += 1;
+      } else {
+        dayMap[dayKey].bookings += 1;
+        dayMap[dayKey].revenue += p;
+      }
+    });
+
+    return DAY_NAMES.map(d => dayMap[d]);
+  }, [recentBookings]);
+
+  // Dynamic sport distribution computed strictly from actual bookings
+  const dynamicSportSplit = React.useMemo(() => {
+    if (recentBookings.length === 0) return [];
+
+    const counts = {};
+    let totalValid = 0;
+    recentBookings.forEach(b => {
+      const sp = b.sport || b.category || 'Football';
+      counts[sp] = (counts[sp] || 0) + 1;
+      totalValid++;
+    });
+
+    if (totalValid === 0) return [];
+
+    return Object.entries(counts).map(([name, count]) => {
+      const pct = Math.round((count / totalValid) * 100);
+      return {
+        name,
+        count,
+        value: pct,
+        color: SPORT_COLORS[name] || '#6366f1'
+      };
+    }).sort((a, b) => b.value - a.value);
+  }, [recentBookings]);
 
   const totalRevenue = recentBookings.reduce((s, b) => {
     const p = typeof b.price === 'number' ? b.price : (parseInt(String(b.price || 0).replace(/\D/g, ''), 10) || 0);
@@ -694,7 +795,6 @@ function OwnerDashboard({ user }) {
 
   return (
     <div className="space-y-8">
-
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -705,21 +805,23 @@ function OwnerDashboard({ user }) {
           <h1 className="text-3xl font-black font-display tracking-tight uppercase text-white">
             Venue Hub
           </h1>
-          <p className="text-xs text-neutral-500 mt-1">Weekly booking analytics, revenue and cancellations</p>
+          <p className="text-xs text-neutral-500 mt-1">Live booking analytics, revenue and cancellations for your venues</p>
         </div>
         <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 rounded-full self-start">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs font-bold text-emerald-400">2 Venues Active</span>
+          <span className={`w-2 h-2 rounded-full ${ownerVenues.length > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'}`} />
+          <span className={`text-xs font-bold ${ownerVenues.length > 0 ? 'text-emerald-400' : 'text-neutral-400'}`}>
+            {ownerVenues.length} {ownerVenues.length === 1 ? 'Venue' : 'Venues'} Active
+          </span>
         </div>
       </div>
 
       {/* Revenue stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Weekly Revenue',   value: `₹${totalRevenue.toLocaleString('en-IN')}`,  icon: <IndianRupee className="w-4 h-4" />, color: 'emerald', sub: 'Across all venues' },
-          { label: 'Bookings This Week', value: totalBookings, icon: <CheckCircle className="w-4 h-4" />, color: 'indigo', sub: 'Confirmed sessions' },
-          { label: 'Cancellations',    value: totalCancelled, icon: <XCircle className="w-4 h-4" />,    color: 'rose',   sub: `${((totalCancelled/totalBookings)*100).toFixed(0)}% cancel rate` },
-          { label: 'Fines Collected',  value: `₹${finesCollected.toLocaleString('en-IN')}`, icon: <Shield className="w-4 h-4" />,    color: 'amber',  sub: '10% from cancellations' },
+          { label: 'Weekly Revenue', value: `₹${totalRevenue.toLocaleString('en-IN')}`, icon: <IndianRupee className="w-4 h-4" />, color: 'emerald', sub: totalRevenue > 0 ? 'Across your active venues' : 'No revenue this week' },
+          { label: 'Bookings This Week', value: totalBookings, icon: <CheckCircle className="w-4 h-4" />, color: 'indigo', sub: totalBookings > 0 ? 'Confirmed sessions' : 'No bookings yet' },
+          { label: 'Cancellations', value: totalCancelled, icon: <XCircle className="w-4 h-4" />, color: 'rose', sub: totalBookings > 0 ? `${((totalCancelled/totalBookings)*100).toFixed(0)}% cancel rate` : '0% cancel rate' },
+          { label: 'Fines Collected', value: `₹${finesCollected.toLocaleString('en-IN')}`, icon: <Shield className="w-4 h-4" />, color: 'amber', sub: 'From cancellations' },
         ].map((s, i) => (
           <motion.div key={s.label} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
             className="glass-card p-5 border border-white/5">
@@ -740,11 +842,18 @@ function OwnerDashboard({ user }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Revenue chart */}
         <div className="lg:col-span-2 glass-card p-6 border border-white/5">
-          <h3 className="font-display font-bold text-white text-sm uppercase tracking-wider mb-5">
-            Daily Revenue — This Week
-          </h3>
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="font-display font-bold text-white text-sm uppercase tracking-wider">
+              Daily Revenue — This Week
+            </h3>
+            {totalRevenue === 0 && (
+              <span className="text-[10px] text-neutral-500 font-medium">
+                Live stream (₹0 this week)
+              </span>
+            )}
+          </div>
           <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={OWNER_BOOKINGS_WEEK}>
+            <AreaChart data={weeklyChartData}>
               <defs>
                 <linearGradient id="ownerRevGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.35} />
@@ -753,45 +862,66 @@ function OwnerDashboard({ user }) {
               </defs>
               <XAxis dataKey="day" tick={{ fill: '#525252', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis hide />
-              <Tooltip formatter={(v) => `₹${v.toLocaleString('en-IN')}`} contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} />
+              <Tooltip formatter={(v) => `₹${Number(v || 0).toLocaleString('en-IN')}`} contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} />
               <Area type="monotone" dataKey="revenue" stroke="#8b5cf6" strokeWidth={2} fill="url(#ownerRevGrad)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Bookings vs Cancellations + sport split */}
+        {/* Sport split */}
         <div className="glass-card p-6 border border-white/5 space-y-5">
           <h3 className="font-display font-bold text-white text-sm uppercase tracking-wider">Sport Split</h3>
-          <div className="flex justify-center">
-            <PieChart width={140} height={140}>
-              <Pie data={SPORT_SPLIT} cx={65} cy={65} innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
-                {SPORT_SPLIT.map((entry, index) => (
-                  <Cell key={index} fill={entry.color} />
-                ))}
-              </Pie>
-            </PieChart>
-          </div>
-          <div className="space-y-2">
-            {SPORT_SPLIT.map(s => (
-              <div key={s.name} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: s.color }} />
-                  <span className="text-neutral-400">{s.name}</span>
-                </div>
-                <span className="font-bold text-white">{s.value}%</span>
+          {dynamicSportSplit.length === 0 ? (
+            <div className="py-8 text-center text-neutral-500 space-y-2">
+              <div className="w-12 h-12 rounded-full border border-dashed border-white/10 flex items-center justify-center mx-auto text-neutral-600">
+                <PieChart className="w-5 h-5" />
               </div>
-            ))}
-          </div>
+              <p className="text-xs font-bold text-neutral-400">No Booking Data Yet</p>
+              <p className="text-[10px] text-neutral-600 max-w-[200px] mx-auto leading-relaxed">
+                Sport distribution will update live as players reserve slots at your venues.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex justify-center">
+                <PieChart width={140} height={140}>
+                  <Pie data={dynamicSportSplit} cx={65} cy={65} innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value">
+                    {dynamicSportSplit.map((entry, index) => (
+                      <Cell key={index} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </div>
+              <div className="space-y-2">
+                {dynamicSportSplit.map(s => (
+                  <div key={s.name} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                      <span className="text-neutral-400">{s.name}</span>
+                    </div>
+                    <span className="font-bold text-white">{s.value}% ({s.count})</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Bookings vs Cancellations bar chart */}
       <div className="glass-card p-6 border border-white/5">
-        <h3 className="font-display font-bold text-white text-sm uppercase tracking-wider mb-5">
-          Bookings vs Cancellations — This Week
-        </h3>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-display font-bold text-white text-sm uppercase tracking-wider">
+            Bookings vs Cancellations — This Week
+          </h3>
+          {totalBookings === 0 && (
+            <span className="text-[10px] text-neutral-500 font-medium">
+              Awaiting first booking
+            </span>
+          )}
+        </div>
         <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={OWNER_BOOKINGS_WEEK} barGap={4}>
+          <BarChart data={weeklyChartData} barGap={4}>
             <XAxis dataKey="day" tick={{ fill: '#525252', fontSize: 11 }} axisLine={false} tickLine={false} />
             <YAxis hide />
             <Tooltip contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} />
@@ -832,7 +962,6 @@ function OwnerDashboard({ user }) {
                   recentBookings.map((b) => {
                     const priceNum = typeof b.price === 'number' ? b.price : (parseInt(String(b.price || 0).replace(/\D/g, ''), 10) || 0);
                     const playerName = b.player_name || b.user_name || b.playerName || 'Player';
-                    const avatarUrl = b.avatar || b.player_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${playerName}`;
                     const venueTitle = b.venue || b.venue_name || b.title || 'Sports Arena';
                     const timeStr = b.time || b.slot_time || 'Scheduled Slot';
                     const isConfirmed = b.status === 'confirmed' || b.status === 'CONFIRMED' || b.status === 'APPROVED';
@@ -841,7 +970,16 @@ function OwnerDashboard({ user }) {
                       <tr key={b.id} className={`border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors ${isCancelled ? 'opacity-50' : ''}`}>
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-2.5">
-                            <img src={avatarUrl} alt={playerName} className="w-7 h-7 rounded-full object-cover border border-white/10" />
+                            <UserAvatar
+                              user={{
+                                full_name: playerName,
+                                name: playerName,
+                                avatar: b.avatar,
+                                avatar_url: b.player_avatar,
+                                uid: b.user_id
+                              }}
+                              className="w-7 h-7 text-[10px]"
+                            />
                             <span className="font-bold text-white">{playerName}</span>
                           </div>
                         </td>

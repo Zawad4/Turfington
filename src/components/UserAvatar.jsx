@@ -12,36 +12,70 @@ export default function UserAvatar({ user, className = "w-10 h-10 text-sm", alt 
   let rawAvatar = user?.avatar_url || user?.avatar || user?.photoURL || '';
 
   // Look up real uploaded or Google profile photo from stored accounts/profiles
-  if (!rawAvatar || rawAvatar.includes('dicebear.com')) {
+  if (!rawAvatar || rawAvatar.includes('dicebear.com') || rawAvatar.includes('bottts')) {
     try {
-      const uId = user?.uid || user?.id || user?.otherUid || user?.senderUid || user?.sender_id;
+      const uId = String(user?.uid || user?.id || user?.otherUid || user?.senderUid || user?.sender_id || '').trim().toLowerCase();
       const uEmail = (user?.email || '').trim().toLowerCase();
       const uName = (user?.full_name || user?.name || user?.displayName || user?.title || user?.user || '').trim().toLowerCase();
       
-      const accStr = typeof localStorage !== 'undefined' ? localStorage.getItem('turfington_accounts') : null;
-      if (accStr) {
-        const accs = Object.values(JSON.parse(accStr));
-        const matched = accs.find(a => 
-          (uId && (a.id === uId || a.uid === uId)) ||
-          (uEmail && a.email?.toLowerCase() === uEmail) ||
-          (uName && (a.full_name?.toLowerCase() === uName || a.name?.toLowerCase() === uName))
-        );
-        if (matched && (matched.avatar || matched.avatar_url) && !matched.avatar?.includes('dicebear.com')) {
-          rawAvatar = matched.avatar || matched.avatar_url;
+      const checkCandidate = (cand) => {
+        if (!cand) return null;
+        const av = cand.avatar || cand.avatar_url || cand.photoURL;
+        if (av && !av.includes('dicebear.com') && !av.includes('bottts') && (av.startsWith('http') || av.startsWith('data:'))) {
+          const cId = String(cand.id || cand.uid || cand.firebase_uid || '').trim().toLowerCase();
+          const cEmail = String(cand.email || '').trim().toLowerCase();
+          const cName = String(cand.full_name || cand.name || cand.displayName || '').trim().toLowerCase();
+          if (
+            (uId && cId && uId === cId) ||
+            (uEmail && cEmail && uEmail === cEmail) ||
+            (uName && cName && uName === cName)
+          ) {
+            return av;
+          }
         }
-      }
-      if (!rawAvatar || rawAvatar.includes('dicebear.com')) {
-        const profStr = typeof localStorage !== 'undefined' ? localStorage.getItem('turfington_profile') : null;
-        if (profStr) {
-          const prof = JSON.parse(profStr);
-          if (prof && (prof.avatar || prof.avatar_url) && !prof.avatar?.includes('dicebear.com')) {
-            if (
-              (uId && (prof.id === uId || prof.uid === uId)) ||
-              (uEmail && prof.email?.toLowerCase() === uEmail) ||
-              (uName && (prof.full_name?.toLowerCase() === uName || prof.name?.toLowerCase() === uName))
-            ) {
-              rawAvatar = prof.avatar || prof.avatar_url;
+        return null;
+      };
+
+      if (typeof localStorage !== 'undefined') {
+        // 1. Check unified connected accounts
+        const connRaw = localStorage.getItem('turfington_connected_accounts');
+        if (connRaw) {
+          const connList = JSON.parse(connRaw);
+          if (Array.isArray(connList)) {
+            for (const a of connList) {
+              const matchedAv = checkCandidate(a);
+              if (matchedAv) { rawAvatar = matchedAv; break; }
             }
+          }
+        }
+
+        // 2. Check active user
+        if (!rawAvatar || rawAvatar.includes('dicebear.com') || rawAvatar.includes('bottts')) {
+          const userRaw = localStorage.getItem('turfington_user');
+          if (userRaw) {
+            const matchedAv = checkCandidate(JSON.parse(userRaw));
+            if (matchedAv) rawAvatar = matchedAv;
+          }
+        }
+
+        // 3. Check legacy accounts map
+        if (!rawAvatar || rawAvatar.includes('dicebear.com') || rawAvatar.includes('bottts')) {
+          const accStr = localStorage.getItem('turfington_accounts');
+          if (accStr) {
+            const accs = Object.values(JSON.parse(accStr));
+            for (const a of accs) {
+              const matchedAv = checkCandidate(a);
+              if (matchedAv) { rawAvatar = matchedAv; break; }
+            }
+          }
+        }
+
+        // 4. Check profile store
+        if (!rawAvatar || rawAvatar.includes('dicebear.com') || rawAvatar.includes('bottts')) {
+          const profStr = localStorage.getItem('turfington_profile');
+          if (profStr) {
+            const matchedAv = checkCandidate(JSON.parse(profStr));
+            if (matchedAv) rawAvatar = matchedAv;
           }
         }
       }
@@ -57,7 +91,8 @@ export default function UserAvatar({ user, className = "w-10 h-10 text-sm", alt 
     && !imgError 
     && (rawAvatar.startsWith('data:') || rawAvatar.startsWith('http')) 
     && !rawAvatar.includes('ui-avatars.com')
-    && !rawAvatar.includes('dicebear.com');
+    && !rawAvatar.includes('dicebear.com')
+    && !rawAvatar.includes('bottts');
 
   const initial = (user?.full_name || user?.name || user?.email || user?.username || 'U').trim().charAt(0).toUpperCase() || 'U';
 
