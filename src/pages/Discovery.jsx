@@ -605,9 +605,9 @@ export default function Discovery({
 
   // Communities Data
   const communities = [
-    { id: 1, name: 'VK Multi Sports Turf Club', members: '240 members', online: 32, image: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=300', category: 'Football' },
-    { id: 2, name: 'Tlk Badminton Club', members: '180 members', online: 15, image: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=300', category: 'Badminton' },
-    { id: 3, name: 'VR Mall Bowlers Club', members: '120 members', online: 8, image: 'https://images.unsplash.com/photo-1541252260730-0412e8e2108e?w=300', category: 'Bowling' }
+    { id: 1, name: 'VK Multi Sports Turf Group', members: '240 members', online: 32, image: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=300', category: 'Football' },
+    { id: 2, name: 'Tlk Badminton Group', members: '180 members', online: 15, image: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=300', category: 'Badminton' },
+    { id: 3, name: 'VR Mall Bowlers Group', members: '120 members', online: 8, image: 'https://images.unsplash.com/photo-1541252260730-0412e8e2108e?w=300', category: 'Bowling' }
   ];
 
   // Filtered Activities (combines standard venues and active hosted matches)

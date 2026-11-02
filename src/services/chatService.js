@@ -202,12 +202,14 @@ export const SYSTEM_DEFAULT_GROUP_IDS = new Set([
 
 export function isSystemDefaultGroup(g) {
   if (!g) return false;
+  // If explicitly created by a real user, it is NEVER a system default!
+  if (g.creatorUid && g.creatorUid !== 'turfington_official' && g.creatorUid !== 'system' && g.creatorUid !== 'admin') {
+    return false;
+  }
   const gid = String(g.groupId || g.id || g.conversationId || '').toLowerCase();
-  const name = String(g.name || g.title || g.groupName || '').toLowerCase();
   const creator = String(g.creatorUid || g.created_by || '').toLowerCase();
   if (SYSTEM_DEFAULT_GROUP_IDS.has(gid)) return true;
   if (creator === 'turfington_official' || creator === 'system' || creator === 'admin') return true;
-  if (name.includes('box cricket') || name.includes('football turf') || name.includes('smashers badminton') || name.includes('pickleball & padel') || name.includes('pickleball society') || name.includes('table tennis warriors') || name.includes('table tennis pro') || name.includes('strike bowling') || name.includes('strike force')) return true;
   return false;
 }
 
@@ -503,7 +505,7 @@ export async function createCommunityGroup(groupData, creatorUser) {
     avatar: finalImage,
     sport: groupData.sportCategory || 'Football',
     creatorUid,
-    lastMessage: `Club "${groupData.name.trim()}" created! Start organizing matches here.`,
+    lastMessage: `Group "${groupData.name.trim()}" created! Start organizing matches here.`,
     lastMessageTimestamp: new Date().toISOString(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -514,6 +516,11 @@ export async function createCommunityGroup(groupData, creatorUser) {
     const localGroups = JSON.parse(localStorage.getItem('turfington_community_groups') || '[]');
     const updatedLocal = [fullGroupData, ...localGroups.filter(g => (g.groupId || g.id) !== groupId)];
     localStorage.setItem('turfington_community_groups', JSON.stringify(updatedLocal));
+
+    // Also persist to dedicated user-created groups store so it is never overwritten
+    const myCreated = JSON.parse(localStorage.getItem('turfington_user_created_groups') || '[]');
+    const updatedMyCreated = [fullGroupData, ...myCreated.filter(g => (g.groupId || g.id) !== groupId)];
+    localStorage.setItem('turfington_user_created_groups', JSON.stringify(updatedMyCreated));
 
     // Also add to user inbox in localStorage
     const localInboxKey = `turfington_inbox_${creatorUid}`;
@@ -561,41 +568,42 @@ export async function createCommunityGroup(groupData, creatorUser) {
     const memberRef = doc(db, 'communityGroups', groupId, 'members', creatorUid);
     const inboxRef = doc(db, 'users', creatorUid, 'inbox', conversationId);
 
-    const batch = writeBatch(db);
-    batch.set(groupRef, {
+    await setDoc(groupRef, {
       ...fullGroupData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
-    });
-    batch.set(convRef, {
+    }, { merge: true }).catch(e => console.warn('group setDoc error:', e));
+
+    await setDoc(convRef, {
       ...convData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       lastMessageTimestamp: serverTimestamp()
-    });
-    batch.set(memberRef, {
+    }, { merge: true }).catch(e => console.warn('conv setDoc error:', e));
+
+    await setDoc(memberRef, {
       uid: creatorUid,
       displayName: creatorName,
       avatarUrl: creatorAvatar,
       role: 'admin',
       status: 'active',
       joinedAt: serverTimestamp()
-    });
-    batch.set(inboxRef, {
+    }, { merge: true }).catch(e => console.warn('member setDoc error:', e));
+
+    await setDoc(inboxRef, {
       conversationId,
       type: 'group',
       groupId,
       title: groupData.name.trim(),
       avatarUrl: finalImage,
-      sport: groupData.sportCategory || 'Football',
+      sport: groupData.sportCategory || 'Sports',
       lastMessage: null,
       lastMessageTimestamp: serverTimestamp(),
       unreadCount: 0,
       isPinned: false,
       isMuted: false,
       updatedAt: serverTimestamp()
-    });
-    batch.commit().catch(e => console.warn('Firestore commit error:', e));
+    }, { merge: true }).catch(e => console.warn('inbox setDoc error:', e));
   } catch (firestoreErr) {
     console.warn('Firestore batch setup error:', firestoreErr);
   }
@@ -1562,10 +1570,10 @@ export function subscribeToCommunityGroups(sportFilter = 'All', callback) {
 
   try {
     const groupsRef = collection(db, 'communityGroups');
-    let q = query(groupsRef, orderBy('memberCount', 'desc'), limit(40));
+    let q = query(groupsRef, limit(60));
 
     if (sportFilter && sportFilter !== 'All') {
-      q = query(groupsRef, where('sportCategory', '==', sportFilter), limit(40));
+      q = query(groupsRef, where('sportCategory', '==', sportFilter), limit(60));
     }
 
     return onSnapshot(q, (snapshot) => {
@@ -1581,10 +1589,30 @@ export function subscribeToCommunityGroups(sportFilter = 'All', callback) {
         })
         .filter(g => !isSystemDefaultGroup(g));
 
+      // Merge remote groups with user-created local groups
+      let localCreated = [];
       try {
-        localStorage.setItem('turfington_community_groups', JSON.stringify(groups));
+        const rawCreated = localStorage.getItem('turfington_user_created_groups');
+        if (rawCreated) localCreated = JSON.parse(rawCreated);
       } catch {}
-      callback(groups);
+
+      const groupMap = new Map();
+      groups.forEach(g => {
+        const gid = g.groupId || g.id;
+        if (gid) groupMap.set(gid, g);
+      });
+      localCreated.forEach(g => {
+        const gid = g.groupId || g.id;
+        if (gid && !groupMap.has(gid)) {
+          groupMap.set(gid, g);
+        }
+      });
+
+      const mergedGroups = Array.from(groupMap.values()).filter(g => !isSystemDefaultGroup(g));
+      try {
+        localStorage.setItem('turfington_community_groups', JSON.stringify(mergedGroups));
+      } catch {}
+      callback(mergedGroups);
     }, (err) => {
       console.warn('subscribeToCommunityGroups notice (falling back to local):', err);
       try {

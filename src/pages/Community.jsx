@@ -120,7 +120,24 @@ export default function Community({ user, setTab }) {
 
   // State
   const [inboxItems, setInboxItems] = useState([]);
-  const [communityGroups, setCommunityGroups] = useState([]);
+  const [communityGroups, setCommunityGroups] = useState(() => {
+    try {
+      const rawLocal = localStorage.getItem('turfington_community_groups');
+      const rawCreated = localStorage.getItem('turfington_user_created_groups');
+      const parsed = [
+        ...(rawLocal ? JSON.parse(rawLocal) : []),
+        ...(rawCreated ? JSON.parse(rawCreated) : [])
+      ];
+      const map = new Map();
+      parsed.forEach(g => {
+        const gid = g.groupId || g.id;
+        if (gid && !isSystemDefaultGroup(g)) map.set(gid, g);
+      });
+      return Array.from(map.values());
+    } catch {
+      return [];
+    }
+  });
   const [activeChat, setActiveChat] = useState(null);
   const [activeTabMode, setActiveTabMode] = useState('direct'); // Default to 'direct' per user specification
   const [selectedSport, setSelectedSport] = useState('All');
@@ -151,7 +168,7 @@ export default function Community({ user, setTab }) {
   const [athleteFilterTab, setAthleteFilterTab] = useState('all'); // 'all' | 'google'
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupSport, setNewGroupSport] = useState('Football');
+  const [newGroupSport, setNewGroupSport] = useState('');
   const [newGroupDesc, setNewGroupDesc] = useState('');
   const [newGroupPfp, setNewGroupPfp] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
@@ -364,8 +381,17 @@ export default function Community({ user, setTab }) {
   // Switch chat & mark as read
   // Derived set of joined group IDs
   const joinedGroupIds = useMemo(() => {
-    return new Set(inboxItems.filter(i => i.type === 'group').map(i => i.groupId || i.conversationId));
-  }, [inboxItems]);
+    const set = new Set(inboxItems.filter(i => i.type === 'group').map(i => i.groupId || i.conversationId));
+    communityGroups.forEach(g => {
+      const gid = g.groupId || g.id;
+      if (gid) {
+        if (g.creatorUid === currentUserId || (Array.isArray(g.members) && g.members.includes(currentUserId))) {
+          set.add(gid);
+        }
+      }
+    });
+    return set;
+  }, [inboxItems, communityGroups, currentUserId]);
 
   const handleSelectChat = (chat) => {
     if (!chat) return;
@@ -526,16 +552,20 @@ export default function Community({ user, setTab }) {
     e.preventDefault();
     if (!newGroupName.trim()) return;
     setCreatingGroup(true);
+    const createdSport = newGroupSport.trim() || 'Sports';
     const created = await createCommunityGroup({
       name: newGroupName.trim(),
-      sportCategory: newGroupSport,
+      sportCategory: createdSport,
+      sport: createdSport,
       description: newGroupDesc.trim(),
       imageUrl: newGroupPfp || ''
     }, user);
     setCreatingGroup(false);
     if (created) {
+      setCommunityGroups(prev => [created, ...prev.filter(g => (g.groupId || g.id) !== (created.groupId || created.id))]);
       setShowCreateGroupModal(false);
       setNewGroupName('');
+      setNewGroupSport('');
       setNewGroupDesc('');
       setNewGroupPfp('');
       if (pfpFileInputRef.current) pfpFileInputRef.current.value = '';
@@ -565,8 +595,12 @@ export default function Community({ user, setTab }) {
       if (SYSTEM_DEFAULT_GROUP_IDS.has(gid) || group.creatorUid === 'turfington_official' || group.created_by === 'turfington_official') {
         return false;
       }
-      if (selectedSport !== 'All' && group.sportCategory !== selectedSport) {
-        return false;
+      if (selectedSport !== 'All') {
+        const gSport = (group.sportCategory || group.sport || '').toLowerCase().trim();
+        const sel = selectedSport.toLowerCase().trim();
+        if (gSport !== sel && !gSport.includes(sel) && !sel.includes(gSport)) {
+          return false;
+        }
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -905,10 +939,10 @@ export default function Community({ user, setTab }) {
                   </div>
                   <div>
                     <p className="text-xs font-bold text-neutral-300">
-                      {selectedSport !== 'All' ? `No ${selectedSport} clubs yet` : 'No sports clubs yet'}
+                      {selectedSport !== 'All' ? `No ${selectedSport} groups yet` : 'No sports groups yet'}
                     </p>
                     <p className="text-[11px] text-neutral-500 mt-1">
-                      Be the first athlete to create an athlete hub!
+                      Be the first athlete to create a sports group chat!
                     </p>
                   </div>
                   <button
@@ -919,7 +953,7 @@ export default function Community({ user, setTab }) {
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-bold text-indigo-200 hover:text-white transition-all cursor-pointer"
                   >
                     <Users className="w-3.5 h-3.5" />
-                    <span>Create Club</span>
+                    <span>Create Group</span>
                   </button>
                 </div>
               ) : (
@@ -1548,7 +1582,7 @@ export default function Community({ user, setTab }) {
                 {/* Group Chat Icon / Picture (Optional) Upload */}
                 <div>
                   <label className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider block mb-2">
-                    Club Profile Picture (PFP)
+                    Group Profile Picture (PFP)
                   </label>
                   <input
                     type="file"
@@ -1566,7 +1600,7 @@ export default function Community({ user, setTab }) {
                         <>
                           <img
                             src={newGroupPfp}
-                            alt="Club PFP Preview"
+                            alt="Group PFP Preview"
                             className="w-full h-full object-cover"
                           />
                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
@@ -1589,7 +1623,7 @@ export default function Community({ user, setTab }) {
                           className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-[11px] font-bold text-indigo-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
                         >
                           <Upload className="w-3.5 h-3.5" />
-                          <span>{newGroupPfp ? 'Change Photo' : 'Upload Club PFP'}</span>
+                          <span>{newGroupPfp ? 'Change Photo' : 'Upload Group PFP'}</span>
                         </button>
                         {newGroupPfp && (
                           <button
@@ -1605,7 +1639,7 @@ export default function Community({ user, setTab }) {
                         )}
                       </div>
                       <p className="text-[10px] text-neutral-500 leading-relaxed">
-                        Add a custom logo or emblem for this sports club. Visible across all club matches & chats.
+                        Add a custom logo or emblem for this sports group. Visible across all group matches & chats.
                       </p>
                     </div>
                   </div>
@@ -1613,14 +1647,14 @@ export default function Community({ user, setTab }) {
 
                 <div>
                   <label className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider block mb-1.5">
-                    Club / Group Name
+                    Group Name
                   </label>
                   <input
                     type="text"
                     required
                     value={newGroupName}
                     onChange={e => setNewGroupName(e.target.value)}
-                    placeholder="e.g. Porur Weekend Box Cricket Club"
+                    placeholder="e.g. Porur Weekend Box Cricket Group"
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-indigo-500/50"
                   />
                 </div>
@@ -1629,15 +1663,14 @@ export default function Community({ user, setTab }) {
                   <label className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider block mb-1.5">
                     Primary Sport
                   </label>
-                  <select
+                  <input
+                    type="text"
+                    required
                     value={newGroupSport}
                     onChange={e => setNewGroupSport(e.target.value)}
-                    className="w-full bg-[#18181f] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500/50"
-                  >
-                    {SPORT_CATEGORIES.filter(s => s !== 'All').map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
+                    placeholder="Type any sport (e.g. Table Tennis, Pickleball, Box Cricket...)"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-indigo-500/50"
+                  />
                 </div>
 
                 <div>
@@ -1670,7 +1703,7 @@ export default function Community({ user, setTab }) {
                     disabled={creatingGroup || !newGroupName.trim()}
                     className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white transition-all shadow-lg disabled:opacity-50 cursor-pointer"
                   >
-                    {creatingGroup ? 'Creating Hub...' : 'Create Hub'}
+                    {creatingGroup ? 'Creating Group...' : 'Create Group'}
                   </button>
                 </div>
               </form>

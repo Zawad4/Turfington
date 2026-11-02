@@ -158,28 +158,10 @@ service cloud.firestore {
 
     // ── 6. Community Groups & Membership ────────────────────
     match /communityGroups/{groupId} {
-      allow read: if true;
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        resource.data.creatorUid == request.auth.uid ||
-        (resource.data.members != null && request.auth.uid in resource.data.members)
-      );
-      allow delete: if isAuthenticated() && resource.data.creatorUid == request.auth.uid;
+      allow read, write: if true;
 
       match /members/{memberUid} {
-        allow read: if true;
-        allow create: if isAuthenticated() && (
-          request.auth.uid == memberUid ||
-          get(/databases/$(database)/documents/communityGroups/$(groupId)).data.creatorUid == request.auth.uid
-        );
-        allow update: if isAuthenticated() && (
-          request.auth.uid == memberUid ||
-          get(/databases/$(database)/documents/communityGroups/$(groupId)).data.creatorUid == request.auth.uid
-        );
-        allow delete: if isAuthenticated() && (
-          request.auth.uid == memberUid ||
-          get(/databases/$(database)/documents/communityGroups/$(groupId)).data.creatorUid == request.auth.uid
-        );
+        allow read, write: if true;
       }
     }
 

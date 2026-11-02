@@ -1260,7 +1260,7 @@ function ManageOffersModal({ venue, onClose, venueOffers, setVenueOffers }) {
                 <div>
                   <label className={labelClass}>{type === 'booking' ? 'Offer Title' : 'Membership Pass Name'}</label>
                   <input value={title} onChange={e => setTitle(e.target.value)} required
-                    placeholder={type === 'booking' ? "e.g. 15% Weekday discount" : "e.g. Silver Club Pass"} className={inputClass} />
+                    placeholder={type === 'booking' ? "e.g. 15% Weekday discount" : "e.g. Silver Pass"} className={inputClass} />
                 </div>
 
                 {type === 'booking' ? (
