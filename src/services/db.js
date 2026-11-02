@@ -2494,6 +2494,11 @@ export async function apiCreateVenue(venueData) {
     : [venueData.sport || 'Sports'];
   const resolvedImg = venueData.image || venueData.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800';
 
+  const currentAuthUid = auth.currentUser?.uid || '';
+  const ownerUid = venueData.owner_uid || currentAuthUid || '';
+  const ownerId = venueData.owner_id || venueData.ownerId || currentAuthUid || 'usr_venue_owner';
+  const ownerEmail = (venueData.owner_email || auth.currentUser?.email || '').toLowerCase().trim();
+
   const customVenue = {
     id: venueData.id || ('venue_' + Date.now()),
     name: venueData.name,
@@ -2517,9 +2522,15 @@ export async function apiCreateVenue(venueData) {
     description: venueData.description || 'Newly added sports venue on Turfington.',
     is_open_24_hours: true,
     isNew: true,
-    owner_id: venueData.owner_id || venueData.ownerId || 'usr_venue_owner',
-    owner_uid: venueData.owner_uid || '',
-    owner_email: (venueData.owner_email || '').toLowerCase().trim(),
+    owner_id: ownerId,
+    owner_uid: ownerUid,
+    ownerUid: ownerUid,
+    ownerId: ownerId,
+    user_id: ownerUid || ownerId,
+    userId: ownerUid || ownerId,
+    creatorUid: ownerUid,
+    creator_id: ownerId,
+    owner_email: ownerEmail,
     owner_name: venueData.owner_name || 'Venue Owner',
     created_at: new Date().toISOString()
   };
@@ -2535,6 +2546,9 @@ export async function apiCreateVenue(venueData) {
     // Also persist under owner specific keys
     if (customVenue.owner_id) {
       localStorage.setItem(`turfington_owner_venues_${customVenue.owner_id}`, JSON.stringify(updated));
+    }
+    if (customVenue.owner_uid) {
+      localStorage.setItem(`turfington_owner_venues_${customVenue.owner_uid}`, JSON.stringify(updated));
     }
     if (customVenue.owner_email) {
       localStorage.setItem(`turfington_owner_venues_${customVenue.owner_email}`, JSON.stringify(updated));
@@ -2566,42 +2580,136 @@ export async function apiCreateVenue(venueData) {
 
   // 5. Firestore sync using deterministic document ID
   try {
-    setDoc(doc(db, 'venues', customVenue.id), customVenue, { merge: true }).catch(() => {});
-    setDoc(doc(db, 'turfs', customVenue.id), customVenue, { merge: true }).catch(() => {});
-  } catch {}
+    await Promise.allSettled([
+      setDoc(doc(db, 'venues', customVenue.id), customVenue, { merge: true }),
+      setDoc(doc(db, 'turfs', customVenue.id), customVenue, { merge: true })
+    ]);
+  } catch (err) {
+    console.warn('Firestore setDoc notice:', err);
+  }
 
   return { success: true, venue: customVenue };
 }
 
-export async function apiDeleteVenue(venueId) {
+export async function apiDeleteVenue(venueInput, venueDataInput = null) {
+  const targetId = typeof venueInput === 'object' && venueInput !== null 
+    ? (venueInput.id || venueInput.venueId || venueInput.name)
+    : venueInput;
+  const venueObj = typeof venueInput === 'object' ? venueInput : (venueDataInput || {});
+  const cleanId = String(targetId || '').trim();
+  const venueName = String(venueObj.name || venueObj.venue || venueObj.title || '').trim();
+
+  // 1. Delete from local storage custom venues
   try {
     const existingStr = localStorage.getItem('turfington_custom_venues');
     if (existingStr) {
       const existing = JSON.parse(existingStr);
-      const updated = existing.filter(v => String(v.id) !== String(venueId) && v.name !== venueId);
+      const updated = existing.filter(v => {
+        const vid = String(v.id || '').trim();
+        const vname = String(v.name || v.venue || '').trim();
+        return vid !== cleanId && (!venueName || vname !== venueName);
+      });
       localStorage.setItem('turfington_custom_venues', JSON.stringify(updated));
       localStorage.setItem('turfington_venues_timestamp', Date.now().toString());
     }
-  } catch {}
 
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('turfington_venues_updated', { detail: { deletedId: venueId } }));
+    // Clean up owner-specific venue lists
+    const ownerKeys = [venueObj.owner_id, venueObj.ownerId, venueObj.owner_uid, venueObj.owner_email].filter(Boolean);
+    ownerKeys.forEach(k => {
+      try {
+        const kStr = localStorage.getItem(`turfington_owner_venues_${k}`);
+        if (kStr) {
+          const arr = JSON.parse(kStr);
+          if (Array.isArray(arr)) {
+            const upd = arr.filter(v => String(v.id) !== cleanId && v.name !== venueName);
+            localStorage.setItem(`turfington_owner_venues_${k}`, JSON.stringify(upd));
+          }
+        }
+      } catch {}
+    });
+
+    // Remove slot cache
+    if (cleanId) {
+      localStorage.removeItem(`turfington_venue_slots_${cleanId}`);
+    }
+  } catch (err) {
+    console.warn('apiDeleteVenue localStorage notice:', err);
   }
 
+  // 2. Dispatch real-time events intra-app
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_venues_updated', { detail: { deletedId: cleanId, deletedName: venueName } }));
+  }
+
+  // 3. Broadcast across tabs
   try {
     if (typeof BroadcastChannel !== 'undefined') {
       const bc = new BroadcastChannel('turfington_venues_channel');
-      bc.postMessage({ type: 'VENUES_UPDATED', deletedId: venueId });
+      bc.postMessage({ type: 'VENUES_UPDATED', deletedId: cleanId, deletedName: venueName });
       bc.close();
     }
   } catch {}
 
+  // 4. API Backend deletion
   try {
-    fetch(`${API_BASE}/api/venues/${venueId}`, { method: 'DELETE' }).catch(() => {});
+    if (cleanId) {
+      fetch(`${API_BASE}/api/venues/${encodeURIComponent(cleanId)}`, { method: 'DELETE' }).catch(() => {});
+    }
   } catch {}
 
-  deleteDoc(doc(db, 'venues', venueId)).catch(() => {});
-  deleteDoc(doc(db, 'turfs', venueId)).catch(() => {});
+  // 5. Firestore deletion: Direct document deletion from both 'venues' and 'turfs'
+  const firestorePromises = [];
+  if (cleanId) {
+    try {
+      firestorePromises.push(deleteDoc(doc(db, 'venues', cleanId)));
+    } catch {}
+    try {
+      firestorePromises.push(deleteDoc(doc(db, 'turfs', cleanId)));
+    } catch {}
+  }
+
+  // 6. Firestore deletion: Query-based cleanup in case document has auto-generated ID or matches by name/id field
+  try {
+    if (cleanId) {
+      const qVId = query(collection(db, 'venues'), where('id', '==', cleanId));
+      const snapVId = await getDocs(qVId);
+      snapVId.docs.forEach(d => {
+        firestorePromises.push(deleteDoc(doc(db, 'venues', d.id)));
+      });
+
+      const qTId = query(collection(db, 'turfs'), where('id', '==', cleanId));
+      const snapTId = await getDocs(qTId);
+      snapTId.docs.forEach(d => {
+        firestorePromises.push(deleteDoc(doc(db, 'turfs', d.id)));
+      });
+    }
+  } catch (err) {
+    console.warn('Firestore venue ID query cleanup notice:', err);
+  }
+
+  if (venueName) {
+    try {
+      const qVName = query(collection(db, 'venues'), where('name', '==', venueName));
+      const snapVName = await getDocs(qVName);
+      snapVName.docs.forEach(d => {
+        firestorePromises.push(deleteDoc(doc(db, 'venues', d.id)));
+      });
+
+      const qTName = query(collection(db, 'turfs'), where('name', '==', venueName));
+      const snapTName = await getDocs(qTName);
+      snapTName.docs.forEach(d => {
+        firestorePromises.push(deleteDoc(doc(db, 'turfs', d.id)));
+      });
+    } catch (err) {
+      console.warn('Firestore venue name query cleanup notice:', err);
+    }
+  }
+
+  try {
+    await Promise.allSettled(firestorePromises);
+  } catch (err) {
+    console.warn('Firestore deleteDoc notice:', err);
+  }
 
   return { success: true };
 }

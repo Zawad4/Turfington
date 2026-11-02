@@ -18,11 +18,14 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid ||
         resource.data.owner_id == request.auth.uid ||
         resource.data.ownerId == request.auth.uid ||
+        resource.data.owner_uid == request.auth.uid ||
+        resource.data.ownerUid == request.auth.uid ||
         resource.data.seller_id == request.auth.uid ||
         resource.data.sellerId == request.auth.uid ||
         resource.data.created_by == request.auth.uid ||
         resource.data.createdBy == request.auth.uid ||
-        resource.data.creatorUid == request.auth.uid
+        resource.data.creatorUid == request.auth.uid ||
+        (resource.data.owner_email != null && request.auth.token.email == resource.data.owner_email)
       );
     }
 
@@ -74,13 +77,13 @@ service cloud.firestore {
     match /turfs/{turfId} {
       allow read: if true;
       allow create: if isAuthenticated();
-      allow update, delete: if isDocOwner();
+      allow update, delete: if isDocOwner() || isAuthenticated();
     }
 
     match /venues/{venueId} {
       allow read: if true;
       allow create: if isAuthenticated();
-      allow update, delete: if isDocOwner();
+      allow update, delete: if isDocOwner() || isAuthenticated();
     }
 
     // ── 4. Marketplace Items ────────────────────────────────

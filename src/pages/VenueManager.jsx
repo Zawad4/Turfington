@@ -1472,7 +1472,7 @@ function VenueCard({ venue, onToggleActive, onUpdateSlot, onBatchUpdateSlots, on
                 <button
                   type="button"
                   onClick={() => {
-                    onDelete(venue.id);
+                    onDelete(venue);
                     setShowDeleteConfirm(false);
                   }}
                   className="px-6 py-2.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-rose-600/30"
@@ -1696,9 +1696,12 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
     }));
   };
 
-  const handleDelete = async (id) => {
-    await apiDeleteVenue(id);
-    setVenues(prev => prev.filter(v => v.id !== id));
+  const handleDelete = async (venueOrId) => {
+    const vId = typeof venueOrId === 'object' ? venueOrId.id : venueOrId;
+    const vObj = typeof venueOrId === 'object' ? venueOrId : venues.find(v => v.id === vId);
+    await apiDeleteVenue(vId, vObj);
+    setVenues(prev => prev.filter(v => v.id !== vId && (!vObj?.name || v.name !== vObj.name)));
+    toast.success(`Venue "${vObj?.name || 'Listing'}" successfully deleted from Firestore and database.`);
   };
 
   if (!user || user.role !== 'owner') {
