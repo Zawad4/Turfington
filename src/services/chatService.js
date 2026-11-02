@@ -131,17 +131,22 @@ export function saveLocalMessages(conversationId, newMessages) {
     merged.forEach(m => {
       const sId = m.senderUid || m.sender_id || m.senderId || m.user;
       const text = (m.text || m.content || '').trim();
-      const mTime = new Date(m.createdAt || m.created_at || m.timestamp || 0).getTime();
+      const mKey = m.idempotency_key || m.idempotencyKey || m.id;
+      const mTime = parseMsgTime(m);
 
       const existingIdx = deduped.findIndex(item => {
+        const itemKey = item.idempotency_key || item.idempotencyKey || item.id;
+        if (mKey && itemKey && mKey === itemKey) return true;
+        if (m.id && item.id && m.id === item.id) return true;
+
         const itemSender = item.senderUid || item.sender_id || item.senderId || item.user;
         const itemText = (item.text || item.content || '').trim();
-        const itemTime = new Date(item.createdAt || item.created_at || item.timestamp || 0).getTime();
+        const itemTime = parseMsgTime(item);
         return (
           itemSender === sId &&
           itemText === text &&
           text.length > 0 &&
-          Math.abs(itemTime - mTime) < 15000
+          Math.abs(itemTime - mTime) < 30000
         );
       });
 

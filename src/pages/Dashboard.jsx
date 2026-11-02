@@ -11,6 +11,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 import { apiFetchBookings, apiFetchOwnerBookings, apiCreateDirectChat, apiFetchMessages, apiSendMessage, apiUpdateBookingStatus } from '../services/db';
+import { formatTime12Hour } from '../utils/formatters';
 
 /* ════════════════════════════════════════════════════════════
    PLAYER DASHBOARD
@@ -209,7 +210,7 @@ function ContactOwnerModal({ booking, user, onClose }) {
 
 function formatBookingItem(b) {
   if (!b) return null;
-  const rawPrice = b.price != null ? b.price : (b.amount_paid != null ? b.amount_paid : 1200);
+  const rawPrice = b.price != null ? b.price : (b.amount != null ? b.amount : (b.amount_paid != null ? b.amount_paid : 1200));
   const numPrice = typeof rawPrice === 'number' 
     ? rawPrice 
     : (parseInt(String(rawPrice).replace(/\D/g, ''), 10) || 1200);
@@ -239,6 +240,7 @@ function formatBookingItem(b) {
       date = 'Today';
     }
   }
+  time = formatTime12Hour(time);
 
   return {
     id: b.id,
@@ -498,7 +500,7 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
                       </div>
                       <p className="text-[11px] text-neutral-400 mt-1 flex flex-col gap-0.5">
                         <span className="flex items-center gap-1"><Calendar className="w-3 h-3 text-indigo-400" />{b.date}</span>
-                        <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-indigo-400" />{b.time}</span>
+                        <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-indigo-400" />{formatTime12Hour(b.time)}</span>
                       </p>
                       {b.status === 'cancelled' && b.fine ? (
                         <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1">
@@ -516,7 +518,7 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
 
                   {/* Price + action bar */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-white/5">
-                    <span className="font-black text-white text-base font-display">₹{b.price.toLocaleString('en-IN')}</span>
+                    <span className="font-black text-white text-base font-display">₹{Number(b.price || b.amount || 0).toLocaleString('en-IN')}</span>
                     
                     {b.status === 'confirmed' || b.status === 'CONFIRMED' || b.status === 'approved' ? (
                       <div className="flex items-center gap-2 flex-wrap">

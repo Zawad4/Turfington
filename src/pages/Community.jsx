@@ -1028,30 +1028,35 @@ export default function Community({ user, setTab }) {
                   {directInviteAthlete && (
                     <div
                       onClick={() => handleStartDirectChat(directInviteAthlete)}
-                      className="p-3 mx-2 my-2 bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-purple-950/40 border border-blue-500/30 hover:border-blue-500/60 rounded-2xl flex items-center justify-between gap-3 shadow-lg transition-all cursor-pointer group"
+                      className="p-3 mx-2 my-2 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-indigo-950/40 border border-indigo-500/30 hover:border-indigo-500/60 rounded-2xl flex items-center justify-between gap-3 shadow-lg transition-all cursor-pointer group"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-blue-600 border border-blue-400/40 flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow-md">
-                          G
-                        </div>
+                        <UserAvatar
+                          user={{
+                            full_name: directInviteAthlete.full_name || directInviteAthlete.email,
+                            email: directInviteAthlete.email,
+                            avatar_url: directInviteAthlete.avatar
+                          }}
+                          className="w-9 h-9 rounded-xl text-xs"
+                        />
                         <div className="truncate">
                           <div className="flex items-center gap-1.5">
-                            <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors truncate">
+                            <p className="text-xs font-bold text-white group-hover:text-indigo-400 transition-colors truncate">
                               {directInviteAthlete.email}
                             </p>
-                            <span className="px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 text-[8px] font-bold">
-                              Google Direct
+                            <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-400 text-[8px] font-bold">
+                              Athlete Direct
                             </span>
                           </div>
                           <p className="text-[10px] text-neutral-400 truncate">
-                            Start 1:1 end-to-end encrypted chat with this Google email
+                            Start 1:1 end-to-end encrypted chat with this athlete
                           </p>
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleStartDirectChat(directInviteAthlete); }}
-                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md flex-shrink-0 transition-all cursor-pointer"
+                        className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md flex-shrink-0 transition-all cursor-pointer"
                       >
                         <Lock className="w-3 h-3 text-emerald-300" />
                         <span>Message</span>
@@ -1161,7 +1166,7 @@ export default function Community({ user, setTab }) {
                   {searchQuery.trim() && matchingAthletesFromSearch.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-white/8">
                       <div className="px-4 py-1.5 flex items-center justify-between text-[10px] font-extrabold text-neutral-400 uppercase tracking-widest">
-                        <span>Athletes & Google Accounts ({matchingAthletesFromSearch.length})</span>
+                        <span>Athletes & Community Members ({matchingAthletesFromSearch.length})</span>
                         <span className="text-[9px] text-indigo-400 font-medium">Tap to Message</span>
                       </div>
                       {matchingAthletesFromSearch.map(athlete => {
@@ -1360,30 +1365,35 @@ export default function Community({ user, setTab }) {
                 {modalDirectInviteAthlete && (
                   <div
                     onClick={() => handleStartDirectChat(modalDirectInviteAthlete)}
-                    className="mb-3 p-3 bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-purple-950/40 border border-blue-500/30 hover:border-blue-500/60 rounded-2xl flex items-center justify-between gap-3 shadow-lg transition-all cursor-pointer group"
+                    className="mb-3 p-3 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-indigo-950/40 border border-indigo-500/30 hover:border-indigo-500/60 rounded-2xl flex items-center justify-between gap-3 shadow-lg transition-all cursor-pointer group"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-10 h-10 rounded-2xl bg-blue-600 border border-blue-400/40 flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow-md">
-                        G
-                      </div>
+                      <UserAvatar
+                        user={{
+                          full_name: modalDirectInviteAthlete.full_name || modalDirectInviteAthlete.email,
+                          email: modalDirectInviteAthlete.email,
+                          avatar_url: modalDirectInviteAthlete.avatar
+                        }}
+                        className="w-10 h-10 rounded-2xl text-xs"
+                      />
                       <div className="truncate">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors truncate">
+                          <p className="text-xs font-bold text-white group-hover:text-indigo-400 transition-colors truncate">
                             {modalDirectInviteAthlete.email}
                           </p>
-                          <span className="px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-400 text-[8px] font-bold">
-                            Google Direct
+                          <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-400 text-[8px] font-bold">
+                            Athlete Direct
                           </span>
                         </div>
                         <p className="text-[10px] text-neutral-400 truncate">
-                          Send 1:1 encrypted message to this Google account
+                          Send 1:1 encrypted message to this athlete
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleStartDirectChat(modalDirectInviteAthlete); }}
-                      className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md flex-shrink-0 transition-all cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md flex-shrink-0 transition-all cursor-pointer"
                     >
                       <Lock className="w-3 h-3 text-emerald-300" />
                       <span>Message</span>

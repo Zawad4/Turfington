@@ -595,7 +595,7 @@ function readDB() {
     if (!parsed.friends) parsed.friends = [];
     if (!parsed.friend_requests) parsed.friend_requests = [];
     if (!parsed.chats) parsed.chats = [];
-    if (!parsed.player_reviews || !parsed.player_reviews.length) parsed.player_reviews = INITIAL_DATA.player_reviews;
+    if (!parsed.player_reviews) parsed.player_reviews = [];
     dbCache = parsed;
     lastReadTime = now;
     return parsed;

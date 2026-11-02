@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { MapPin, Users, Clock, Award, Star, Calendar, MessageSquare, Heart, Share2, Compass, Plus, Flame } from 'lucide-react';
 import { apiCreateDirectChat, apiSubscribeVenues, apiFetchHostedMatches, apiJoinHostedMatch, apiLeaveHostedMatch, apiCreateBooking } from '../services/db';
 import { useToast } from '../context';
+import { formatTime12Hour } from '../utils/formatters';
 
 export default function Home({ 
   setTab, 
@@ -471,7 +472,7 @@ export default function Home({
                           </div>
                           <div className="flex items-center text-xs text-neutral-400">
                             <Clock className="w-3.5 h-3.5 mr-1.5 text-neutral-500" />
-                            <span>{s.time}</span>
+                            <span>{formatTime12Hour(s.time)}</span>
                           </div>
                           <div className="flex items-center text-xs text-neutral-400">
                             <Users className="w-3.5 h-3.5 mr-1.5 text-neutral-500" />
@@ -569,7 +570,7 @@ export default function Home({
                             <h4 className="font-bold text-white text-sm font-display truncate max-w-[180px]">{booking.title}</h4>
                             <p className="text-xs text-neutral-400 mt-0.5">{booking.sport}</p>
                             <p className="text-[10px] text-neutral-500 mt-1 flex items-center">
-                              <Clock className="w-3 h-3 mr-1" /> {booking.time}
+                              <Clock className="w-3 h-3 mr-1" /> {formatTime12Hour(booking.time)}
                             </p>
                           </div>
                         </div>

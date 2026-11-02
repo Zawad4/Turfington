@@ -7,6 +7,11 @@ import {
   ShieldCheck, QrCode, CreditCard, Smartphone, Building2
 } from 'lucide-react';
 import SportIcon from '../components/SportIcon';
+import { formatTime12Hour } from '../utils/formatters';
+
+const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
+  ? import.meta.env.VITE_API_URL
+  : (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.PROD ? '' : 'http://localhost:5000');
 
 /* ─── Static Data ─────────────────────────────────────── */
 const SPORTS_TABS = ['All', 'Football', 'Badminton', 'Table Tennis', 'Bowling', 'Cricket'];
@@ -205,19 +210,48 @@ function TournamentRegistrationModal({ tournament, user, onClose, onSuccess }) {
       if (uid) {
         const uKey = `turfington_user_bookings_${uid}`;
         const userBookings = JSON.parse(localStorage.getItem(uKey) || '[]');
-        userBookings.unshift({
+        const tournamentBooking = {
           id: passId,
+          booking_id: passId,
           type: 'tournament',
           title: tournament?.title || 'Tournament',
           venue: tournament?.venue || 'Venue',
+          venue_name: tournament?.venue || 'Venue',
           date: tournament?.date || 'Upcoming',
+          time: tournament?.time || '09:00 AM',
+          slot_time: tournament?.time || '09:00 AM',
+          sport: tournament?.sport || 'Football',
           teamName: formData.teamName,
           captainName: formData.captainName,
+          price: totalAmount,
           amount: totalAmount,
+          amount_paid: totalAmount,
           status: 'confirmed',
+          is_prepaid: true,
           createdAt: new Date().toISOString()
-        });
+        };
+        userBookings.unshift(tournamentBooking);
         localStorage.setItem(uKey, JSON.stringify(userBookings));
+
+        // Sync with API backend
+        fetch(`${API_BASE}/api/bookings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: passId,
+            user_id: uid,
+            userId: uid,
+            userName: formData.captainName || user?.displayName || 'Athlete',
+            venue: tournament?.venue || 'Venue',
+            sport: tournament?.sport || 'Football',
+            date: tournament?.date || 'Upcoming',
+            time: tournament?.time || '09:00 AM',
+            price: totalAmount,
+            amount: totalAmount,
+            status: 'confirmed',
+            type: 'tournament'
+          })
+        }).catch(err => console.warn('Sync tournament booking notice:', err));
       }
     } catch (e) {
       console.warn('Error saving tournament booking:', e);

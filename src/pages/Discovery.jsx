@@ -587,7 +587,7 @@ export default function Discovery({
       id: selectedSlotTurf.id,
       venue: selectedSlotTurf.venue || selectedSlotTurf.title || selectedSlotTurf.name,
       sport: bookingType === 'open_match' ? selectedSportPreset : (selectedSlotTurf.sport || 'Sports'),
-      time: `${slotDateTab}, ${slotTimeStr}`,
+      time: `${slotDateTab}, ${formatTime12Hour(slotTimeStr)}`,
       price: `₹${slot.price || 600}`,
       image: selectedSlotTurf.image || selectedSlotTurf.image_url,
       owner_id: selectedSlotTurf.owner_id || selectedSlotTurf.ownerId || 'usr_venue_owner',
@@ -1118,7 +1118,7 @@ export default function Discovery({
                         });
 
                         const isBooked = !!activeBookingForTurf || !!userHostedMatch;
-                        const displaySlotTime = activeBookingForTurf?.time || activeBookingForTurf?.slot_time || userHostedMatch?.time || 'Reserved Slot';
+                        const displaySlotTime = formatTime12Hour(activeBookingForTurf?.time || activeBookingForTurf?.slot_time || userHostedMatch?.time || 'Reserved Slot');
                         const isHosted = !!userHostedMatch || !!activeBookingForTurf?.isHosted;
                         const joinedCount = userHostedMatch ? (userHostedMatch.players_joined || userHostedMatch.existing_players_count || 1) : (activeBookingForTurf?.joinedPlayers || 1);
                         const totalCap = userHostedMatch ? (userHostedMatch.players_total || userHostedMatch.capacity || 10) : (activeBookingForTurf?.capacity || 10);
@@ -1448,7 +1448,7 @@ export default function Discovery({
                               </div>
                               <div className="flex items-center">
                                 <Clock className="w-3.5 h-3.5 mr-1.5 text-indigo-400" />
-                                <span>{act.time}</span>
+                                <span>{formatTime12Hour(act.time)}</span>
                               </div>
                               <div className="flex items-center">
                                 <Users className="w-3.5 h-3.5 mr-1.5 text-indigo-400" />
@@ -1652,7 +1652,7 @@ export default function Discovery({
                                </div>
                                <div className="flex justify-between items-center px-1 text-[11px] pt-0.5">
                                  <span className="text-neutral-400 truncate max-w-[170px]">
-                                   {activeB.time || activeB.slot_time || 'Reserved'}
+                                   {formatTime12Hour(activeB.time || activeB.slot_time || 'Reserved')}
                                  </span>
                                  <button
                                    onClick={() => handleCancelUserBooking(activeB, v)}
@@ -2242,7 +2242,7 @@ export default function Discovery({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-neutral-400">Time Window</span>
-                    <span className="text-neutral-300 font-medium">{activePrepaidVenue.time}</span>
+                    <span className="text-neutral-300 font-medium">{formatTime12Hour(activePrepaidVenue.time)}</span>
                   </div>
                   <div className="flex justify-between pt-2.5 border-t border-white/5 font-bold text-sm">
                     <span>Payable at Turf Counter</span>
@@ -2617,7 +2617,7 @@ export default function Discovery({
                 <div className="flex justify-between items-center">
                   <span className="text-neutral-400">Reserved Slot</span>
                   <span className="text-indigo-400 font-bold">
-                    {bookingCelebrationData.time || bookingCelebrationData.slot_time}
+                    {formatTime12Hour(bookingCelebrationData.time || bookingCelebrationData.slot_time)}
                   </span>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-white/5">

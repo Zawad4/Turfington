@@ -1530,7 +1530,7 @@ export default function VenueManager({ user, venueOffers, setVenueOffers }) {
                     <p className="text-white font-medium">{req.title || req.venue_name || 'Turf Facility'}</p>
                     <div className="flex items-center space-x-3 text-[10px] text-neutral-400">
                       <span className="flex items-center space-x-1"><Calendar className="w-3 h-3 text-neutral-500" /><span>{req.date || 'Scheduled Date'}</span></span>
-                      <span className="flex items-center space-x-1"><Clock className="w-3 h-3 text-neutral-500" /><span>{req.time || req.slot_time || 'Slot Time'}</span></span>
+                      <span className="flex items-center space-x-1"><Clock className="w-3 h-3 text-neutral-500" /><span>{formatTime12Hour(req.time || req.slot_time || 'Slot Time')}</span></span>
                     </div>
                   </div>
 

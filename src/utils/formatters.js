@@ -62,25 +62,13 @@ export function truncateText(text, maxLength = 100) {
 export function formatTime12Hour(timeStr) {
   if (!timeStr || typeof timeStr !== 'string') return timeStr || '';
 
-  const formatSingle = (t) => {
-    const clean = t.trim();
-    // Already in 12-hour format?
-    if (/am|pm/i.test(clean)) return clean;
-    const match = clean.match(/^(\d{1,2}):(\d{2})$/);
-    if (!match) return clean;
-    let hour = parseInt(match[1], 10);
-    const minute = match[2];
+  // Converts any 24h time occurrence (e.g. 14:00, 06:00, 00:00, 18:00 - 19:00, Today, 18:00) into 12h AM/PM
+  return timeStr.replace(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?(?!\s*[AP]M)\b/gi, (match, h, m) => {
+    let hour = parseInt(h, 10);
     const ampm = hour >= 12 ? 'PM' : 'AM';
     hour = hour % 12;
     if (hour === 0) hour = 12;
-    return `${hour}:${minute} ${ampm}`;
-  };
-
-  if (timeStr.includes('-') || timeStr.includes('–')) {
-    const parts = timeStr.split(/[-–]/);
-    return parts.map(formatSingle).join(' – ');
-  }
-
-  return formatSingle(timeStr);
+    return `${hour}:${m} ${ampm}`;
+  });
 }
 

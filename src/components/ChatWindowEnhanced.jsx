@@ -24,6 +24,7 @@ import {
 } from '../services/chatService';
 import UserAvatar from './UserAvatar';
 import { useToast } from '../context';
+import { formatTime12Hour } from '../utils/formatters';
 
 const REACTION_EMOJIS = ['❤️', '👍', '😂', '🔥', '⚽'];
 
@@ -136,10 +137,58 @@ export default function ChatWindowEnhanced({
     };
   }, [conversationId, currentUserId]);
 
+  // Bulletproof deduplication: eliminates duplicate messages from optimistic sends, remote Firestore snapshots, or server responses
+  const dedupedMessages = useMemo(() => {
+    const result = [];
+    const seenIds = new Set();
+    const parseTime = (m) => {
+      if (!m) return 0;
+      const t = m.createdAt || m.created_at || m.timestamp;
+      if (t?.toMillis) return t.toMillis();
+      if (t?.toDate) return t.toDate().getTime();
+      if (typeof t === 'number') return t;
+      const parsed = new Date(t || 0).getTime();
+      return isNaN(parsed) ? 0 : parsed;
+    };
+
+    messages.forEach(msg => {
+      if (!msg) return;
+      const id = msg.id || msg.idempotency_key || msg.idempotencyKey;
+      if (id && seenIds.has(id)) return;
+
+      const sender = msg.senderUid || msg.sender_id || msg.senderId || msg.user;
+      const text = (msg.text || msg.content || '').trim();
+      const time = parseTime(msg);
+
+      // Check if duplicate of an existing message in result
+      const isDup = result.some(prev => {
+        const prevId = prev.id || prev.idempotency_key || prev.idempotencyKey;
+        if (id && prevId && id === prevId) return true;
+        const prevSender = prev.senderUid || prev.sender_id || prev.senderId || prev.user;
+        const prevText = (prev.text || prev.content || '').trim();
+        const prevTime = parseTime(prev);
+        // If same sender, same text, and within 20s, it's the exact same message
+        return (
+          prevSender === sender &&
+          prevText === text &&
+          text.length > 0 &&
+          Math.abs(prevTime - time) < 20000
+        );
+      });
+
+      if (!isDup) {
+        if (id) seenIds.add(id);
+        result.push(msg);
+      }
+    });
+
+    return result;
+  }, [messages]);
+
   // Auto scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, typingUsers]);
+  }, [dedupedMessages, typingUsers]);
 
   // Handle typing status broadcast
   const handleInputChange = (e) => {
@@ -562,10 +611,10 @@ export default function ChatWindowEnhanced({
               </div>
             </div>
 
-            {messages.map((msg) => {
+            {dedupedMessages.map((msg) => {
               const isSelf = (msg.senderUid === currentUserId) || (msg.sender_id === currentUserId) || msg.user === 'You' || msg.self;
               const isDeleted = Boolean(msg.isDeleted || msg.deleted_at);
-              const parentMsg = (msg.replyToId ? messages.find(m => m.id === msg.replyToId) : null) || (msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id) : null);
+              const parentMsg = (msg.replyToId ? dedupedMessages.find(m => m.id === msg.replyToId) : null) || (msg.reply_to_id ? dedupedMessages.find(m => m.id === msg.reply_to_id) : null);
               const senderAvatar = msg.senderAvatar || msg.sender?.avatar_url || msg.avatar || '';
               const senderName = msg.senderName || msg.sender?.full_name || msg.user || 'Athlete';
 
@@ -740,7 +789,7 @@ export default function ChatWindowEnhanced({
                   {/* Message Timestamp & Status Indicator */}
                   <div className={`flex items-center gap-1.5 text-[9px] text-neutral-500 px-1 ${isSelf ? 'flex-row-reverse' : ''}`}>
                     <span>
-                      {new Date(msg.created_at || Date.now()).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      {formatTime12Hour(new Date(msg.created_at || msg.createdAt || Date.now()).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }))}
                     </span>
                     {msg.isEncrypted !== false && (
                       <Lock className="w-2.5 h-2.5 text-emerald-400/90 flex-shrink-0" title="Protected by AES-256-GCM End-to-End Encryption" />
