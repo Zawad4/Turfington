@@ -1271,107 +1271,27 @@ app.post('/api/chats/entity', (req, res) => {
   res.json({ success: true, chat });
 });
 
-// Default initial community sports clubs if none in DB
-const DEFAULT_COMMUNITY_GROUPS = [
-  {
-    id: 'group_football_chennai',
-    groupId: 'group_football_chennai',
-    name: '⚽ Chennai Football Turf Hub',
-    description: 'Weekly 7v7 turf matches, tactical meetups, and friendly amateur leagues across Chennai.',
-    sportCategory: 'Football',
-    locationReference: 'Chennai, Tamil Nadu',
-    imageUrl: '/football_group.jpg',
-    creatorUid: 'turfington_official',
-    visibility: 'public',
-    memberCount: 48,
-    members: ['turfington_official'],
-    created_at: new Date(Date.now() - 86400000 * 7).toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'group_box_cricket',
-    groupId: 'group_box_cricket',
-    name: '🏏 Box Cricket Warriors',
-    description: 'Fast-paced box cricket tournaments, night matches, and weekend nets. Batsmen & bowlers welcome!',
-    sportCategory: 'Cricket',
-    locationReference: 'Poonamallee, Chennai',
-    imageUrl: '/cricket_group.jpg',
-    creatorUid: 'turfington_official',
-    visibility: 'public',
-    memberCount: 62,
-    members: ['turfington_official'],
-    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'group_badminton_smashers',
-    groupId: 'group_badminton_smashers',
-    name: '🏸 Smashers Badminton Club',
-    description: 'Wooden and synthetic court doubles, high-intensity rallies, and morning coaching sessions.',
-    sportCategory: 'Badminton',
-    locationReference: 'Porur, Chennai',
-    imageUrl: '/badminton_group.jpg',
-    creatorUid: 'turfington_official',
-    visibility: 'public',
-    memberCount: 39,
-    members: ['turfington_official'],
-    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'group_pickleball_chennai',
-    groupId: 'group_pickleball_chennai',
-    name: '🎾 Chennai Pickleball Society',
-    description: 'Fastest growing racket sport community in Chennai. Morning drills and weekend mini-tournaments.',
-    sportCategory: 'Pickleball',
-    locationReference: 'Anna Nagar, Chennai',
-    imageUrl: '/hero/hero_pickleball_court.jpg',
-    creatorUid: 'turfington_official',
-    visibility: 'public',
-    memberCount: 27,
-    members: ['turfington_official'],
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'group_table_tennis_warriors',
-    groupId: 'group_table_tennis_warriors',
-    name: '🏓 Table Tennis Pro League',
-    description: 'Spin, speed and championship tables. Singles & doubles ladder ranking matches.',
-    sportCategory: 'Table Tennis',
-    locationReference: 'Mylapore, Chennai',
-    imageUrl: '/hero/hero_table_tennis_paddle.jpg',
-    creatorUid: 'turfington_official',
-    visibility: 'public',
-    memberCount: 34,
-    members: ['turfington_official'],
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'group_bowling_strikes',
-    groupId: 'group_bowling_strikes',
-    name: '🎳 Strike Force Bowling Club',
-    description: 'Weekend 10-pin alley strikes, trick shots, and casual corporate team bowling.',
-    sportCategory: 'Bowling',
-    locationReference: 'Velachery, Chennai',
-    imageUrl: '/hero/hero_bowling_lane_pins.jpg',
-    creatorUid: 'turfington_official',
-    visibility: 'public',
-    memberCount: 21,
-    members: ['turfington_official'],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-];
+// Default system group IDs to exclude
+const DEFAULT_SYSTEM_GROUP_IDS = new Set([
+  'group_football_chennai',
+  'group_box_cricket',
+  'group_badminton_smashers',
+  'group_pickleball_chennai',
+  'group_pickleball_padel',
+  'group_table_tennis',
+  'group_table_tennis_warriors',
+  'group_bowling_strikes',
+  'group_strike_bowling'
+]);
 
 // GET /api/community-groups
 app.get('/api/community-groups', (req, res) => {
   const db = readDB();
-  if (!db.community_groups || !Array.isArray(db.community_groups) || db.community_groups.length === 0) {
-    db.community_groups = [...DEFAULT_COMMUNITY_GROUPS];
-    writeDB(db);
-  }
+  db.community_groups = (db.community_groups || []).filter(g => 
+    !DEFAULT_SYSTEM_GROUP_IDS.has(g.id) &&
+    !DEFAULT_SYSTEM_GROUP_IDS.has(g.groupId) &&
+    g.creatorUid !== 'turfington_official'
+  );
   const sport = req.query.sport;
   let list = db.community_groups;
   if (sport && sport !== 'All') {
@@ -1388,7 +1308,11 @@ app.post('/api/community-groups', (req, res) => {
   }
 
   const db = readDB();
-  db.community_groups = db.community_groups || [...DEFAULT_COMMUNITY_GROUPS];
+  db.community_groups = (db.community_groups || []).filter(g => 
+    !DEFAULT_SYSTEM_GROUP_IDS.has(g.id) &&
+    !DEFAULT_SYSTEM_GROUP_IDS.has(g.groupId) &&
+    g.creatorUid !== 'turfington_official'
+  );
   db.chats = db.chats || [];
   db.messages = db.messages || [];
 
@@ -1426,7 +1350,6 @@ app.post('/api/community-groups', (req, res) => {
     updated_at: new Date().toISOString()
   };
 
-  // Add to top of community_groups so it shows first for all users
   db.community_groups.unshift(newClub);
 
   // Add conversation to chats
