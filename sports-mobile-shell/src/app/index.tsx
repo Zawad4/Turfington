@@ -15,8 +15,10 @@ import { WebView } from 'react-native-webview';
 // Cast WebView to any to avoid React 19 type discrepancies in third-party definitions
 const AppWebView: any = WebView;
 
-// Default Wi-Fi IP of the host machine
-const DEFAULT_URL = 'http://172.20.10.2:5173';
+// Dual URL support: Local Wi-Fi network and Cloud Live deployment (works on 5G/4G/Anywhere)
+const LOCAL_DEV_URL = 'http://192.168.1.4:5173';
+const CLOUD_LIVE_URL = 'https://pdd-draft-1.vercel.app';
+const DEFAULT_URL = LOCAL_DEV_URL;
 
 export default function AppScreen() {
   const [currentUrl, setCurrentUrl] = useState(DEFAULT_URL);
@@ -48,19 +50,35 @@ export default function AppScreen() {
     webViewRef.current?.reload();
   };
 
+  const switchToCloud = () => {
+    setInputUrl(CLOUD_LIVE_URL);
+    setCurrentUrl(CLOUD_LIVE_URL);
+    setHasError(false);
+    setIsLoading(true);
+    setShowConfig(false);
+  };
+
+  const switchToLocal = () => {
+    setInputUrl(LOCAL_DEV_URL);
+    setCurrentUrl(LOCAL_DEV_URL);
+    setHasError(false);
+    setIsLoading(true);
+    setShowConfig(false);
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
       {/* Top Floating Control Bar */}
       <View style={styles.topBar}>
-        <View style={styles.statusDot} />
+        <View style={[styles.statusDot, currentUrl.includes('vercel.app') && { backgroundColor: '#38bdf8' }]} />
         <Text style={styles.urlLabel} numberOfLines={1}>
-          {currentUrl}
+          {currentUrl.includes('vercel.app') ? '☁️ Cloud Live' : currentUrl}
         </Text>
         <TouchableOpacity
           style={styles.pillButton}
           onPress={() => setShowConfig(!showConfig)}
         >
-          <Text style={styles.pillButtonText}>{showConfig ? 'Close' : 'IP Config'}</Text>
+          <Text style={styles.pillButtonText}>{showConfig ? 'Close' : 'Switch URL'}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.pillButton, styles.reloadButton]}
@@ -70,10 +88,30 @@ export default function AppScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Optional IP Configuration Dropdown */}
+      {/* Optional URL Configuration Dropdown */}
       {showConfig && (
         <View style={styles.configCard}>
-          <Text style={styles.configTitle}>Server URL</Text>
+          <Text style={styles.configTitle}>Choose Server Source</Text>
+          <View style={styles.presetsRow}>
+            <TouchableOpacity
+              style={[styles.presetButton, currentUrl === LOCAL_DEV_URL && styles.presetButtonActive]}
+              onPress={switchToLocal}
+            >
+              <Text style={[styles.presetButtonText, currentUrl === LOCAL_DEV_URL && styles.presetButtonTextActive]}>
+                🏠 Local Wi-Fi
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.presetButton, currentUrl === CLOUD_LIVE_URL && styles.presetButtonActive]}
+              onPress={switchToCloud}
+            >
+              <Text style={[styles.presetButtonText, currentUrl === CLOUD_LIVE_URL && styles.presetButtonTextActive]}>
+                ☁️ Cloud (5G / Cellular)
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.configTitle, { marginTop: 12 }]}>Custom Address</Text>
           <TextInput
             style={styles.input}
             value={inputUrl}
@@ -138,19 +176,28 @@ export default function AppScreen() {
 
             <View style={styles.troubleshootBox}>
               <Text style={styles.troubleshootItem}>
-                1. Make sure <Text style={styles.codeText}>npm run dev</Text> is running on your computer.
+                • If using <Text style={styles.boldText}>Local Wi-Fi</Text>, ensure your phone is connected to the same Wi-Fi router.
               </Text>
               <Text style={styles.troubleshootItem}>
-                2. Confirm your phone and PC are on the same Wi-Fi or Hotspot network.
-              </Text>
-              <Text style={styles.troubleshootItem}>
-                3. If your PC IP changed, tap <Text style={styles.boldText}>"IP Config"</Text> at top to update it.
+                • If on <Text style={styles.boldText}>5G Mobile Data</Text>, tap the green button below to connect via Cloud!
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
-              <Text style={styles.retryButtonText}>Retry Connection</Text>
-            </TouchableOpacity>
+            <View style={{ gap: 10, width: '100%', alignItems: 'center' }}>
+              <TouchableOpacity
+                style={[styles.retryButton, { backgroundColor: '#10b981', width: '100%', alignItems: 'center' }]}
+                onPress={switchToCloud}
+              >
+                <Text style={styles.retryButtonText}>☁️ Open Cloud Live (Works on 5G)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.retryButton, { backgroundColor: '#4f46e5', width: '100%', alignItems: 'center' }]}
+                onPress={handleRetry}
+              >
+                <Text style={styles.retryButtonText}>↻ Retry Local Wi-Fi Connection</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
@@ -188,38 +235,69 @@ const styles = StyleSheet.create({
   pillButton: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  pillButtonText: {
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '600',
   },
   reloadButton: {
     paddingHorizontal: 8,
   },
-  pillButtonText: {
-    color: '#e2e8f0',
-    fontSize: 12,
-    fontWeight: '600',
-  },
   configCard: {
-    backgroundColor: '#181822',
+    backgroundColor: '#161622',
     padding: 14,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   configTitle: {
     color: '#cbd5e1',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 6,
   },
-  input: {
-    backgroundColor: '#0e0e14',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 8,
-    color: '#fff',
-    paddingHorizontal: 12,
+  presetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  presetButton: {
+    flex: 1,
     paddingVertical: 8,
-    fontSize: 14,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+  },
+  presetButtonActive: {
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    borderColor: '#6366f1',
+  },
+  presetButtonText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  presetButtonTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  input: {
+    height: 38,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    color: '#fff',
+    fontSize: 13,
   },
   configActions: {
     flexDirection: 'row',
@@ -227,41 +305,35 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   applyButton: {
-    backgroundColor: '#4f46e5',
+    backgroundColor: '#6366f1',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 8,
   },
   applyButtonText: {
     color: '#fff',
+    fontSize: 12,
     fontWeight: 'bold',
-    fontSize: 13,
   },
   webViewWrapper: {
     flex: 1,
     position: 'relative',
-    backgroundColor: '#0b0b0e',
   },
   webView: {
     flex: 1,
     backgroundColor: '#0b0b0e',
   },
   centerContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#0b0b0e',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
-    zIndex: 10,
   },
   loadingText: {
     color: '#94a3b8',
-    fontSize: 14,
-    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '500',
   },
   errorContainer: {
     position: 'absolute',

@@ -129,6 +129,9 @@ export default function Auth({ onLogin }) {
         result = await signInWithCredential(auth, credential);
       } else {
         const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({
+          prompt: 'select_account'
+        });
         result = await signInWithPopup(auth, provider);
       }
       

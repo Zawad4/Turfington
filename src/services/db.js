@@ -2414,9 +2414,25 @@ export function apiSubscribeVenues(callback) {
   let unsubVenues = null;
   let unsubTurfs = null;
   try {
-    unsubVenues = onSnapshot(collection(db, 'venues'), () => {
+    unsubVenues = onSnapshot(collection(db, 'venues'), (snap) => {
+      if (snap && snap.docs) {
+        const liveVenues = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        try {
+          const s = localStorage.getItem('turfington_custom_venues');
+          const existing = s ? JSON.parse(s) : [];
+          const map = new Map();
+          liveVenues.forEach(v => map.set(String(v.id || v.name), v));
+          existing.forEach(v => {
+            const k = String(v.id || v.name);
+            if (!map.has(k)) map.set(k, v);
+          });
+          localStorage.setItem('turfington_custom_venues', JSON.stringify(Array.from(map.values())));
+        } catch {}
+      }
       apiFetchTurfs().then(turfs => callback(turfs));
-    }, () => {});
+    }, (err) => {
+      console.warn('venues onSnapshot error:', err);
+    });
   } catch {}
 
   try {
@@ -2592,6 +2608,107 @@ export async function apiCreateVenue(venueData) {
   }
 
   return { success: true, venue: customVenue };
+}
+
+
+export async function apiUpdateVenue(venueId, updatedData) {
+  const cleanId = String(venueId || updatedData.id || '').trim();
+  let venueLat = parseFloat(updatedData.lat ?? updatedData.latitude) || 13.0827;
+  let venueLng = parseFloat(updatedData.lng ?? updatedData.longitude) || 80.2707;
+  if (isNaN(venueLat) || isNaN(venueLng) || venueLat < 8 || venueLat > 36 || venueLng < 68 || venueLng > 97) {
+    venueLat = 13.0827;
+    venueLng = 80.2707;
+  }
+  const sportsArr = Array.isArray(updatedData.sports) && updatedData.sports.length > 0 
+    ? updatedData.sports 
+    : [updatedData.sport || 'Sports'];
+  const resolvedImg = updatedData.image || updatedData.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800';
+
+  const bookingMode = updatedData.booking_mode || updatedData.booking_type || (updatedData.requires_approval ? 'request' : 'direct');
+  const requiresApproval = updatedData.requires_approval ?? (bookingMode === 'request');
+  const pricePerHour = Number(updatedData.price_per_hr || updatedData.pricePerHour) || 1000;
+
+  const patch = {
+    ...updatedData,
+    id: cleanId,
+    name: updatedData.name,
+    venue: updatedData.name,
+    category: updatedData.sport || sportsArr[0] || 'Sports',
+    sport: updatedData.sport || sportsArr[0] || 'Sports',
+    sports: sportsArr,
+    address: sanitizeLocationToEnglish(updatedData.address || updatedData.location || 'Chennai, Tamil Nadu'),
+    location: sanitizeLocationToEnglish(updatedData.address || updatedData.location || 'Chennai, Tamil Nadu'),
+    city: sanitizeLocationToEnglish(updatedData.city || 'Chennai'),
+    latitude: venueLat,
+    longitude: venueLng,
+    lat: venueLat,
+    lng: venueLng,
+    price: `₹${pricePerHour}/hr`,
+    price_per_hr: pricePerHour,
+    pricePerHour: pricePerHour,
+    image_url: resolvedImg,
+    image: resolvedImg,
+    fitMode: updatedData.fitMode || 'cover',
+    booking_mode: bookingMode,
+    booking_type: bookingMode,
+    requires_approval: requiresApproval,
+    description: updatedData.description || '',
+    phone: updatedData.phone || '',
+    updated_at: new Date().toISOString()
+  };
+
+  // 1. Update localStorage
+  try {
+    const existingStr = localStorage.getItem('turfington_custom_venues');
+    if (existingStr) {
+      const existing = JSON.parse(existingStr);
+      const updated = existing.map(v => (String(v.id) === cleanId || v.name === patch.name) ? { ...v, ...patch } : v);
+      localStorage.setItem('turfington_custom_venues', JSON.stringify(updated));
+      localStorage.setItem('turfington_venues_timestamp', Date.now().toString());
+    }
+
+    const ownerKeys = [patch.owner_id, patch.ownerId, patch.owner_uid, patch.owner_email].filter(Boolean);
+    ownerKeys.forEach(k => {
+      try {
+        const kStr = localStorage.getItem(`turfington_owner_venues_${k}`);
+        if (kStr) {
+          const arr = JSON.parse(kStr);
+          if (Array.isArray(arr)) {
+            const upd = arr.map(v => (String(v.id) === cleanId || v.name === patch.name) ? { ...v, ...patch } : v);
+            localStorage.setItem(`turfington_owner_venues_${k}`, JSON.stringify(upd));
+          }
+        }
+      } catch {}
+    });
+  } catch (err) {
+    console.warn('apiUpdateVenue localStorage notice:', err);
+  }
+
+  // 2. Dispatch real-time events intra-app
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_venues_updated', { detail: patch }));
+  }
+
+  // 3. Broadcast across tabs
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('turfington_venues_channel');
+      bc.postMessage({ type: 'VENUES_UPDATED', venue: patch });
+      bc.close();
+    }
+  } catch {}
+
+  // 4. Update Firestore collections 'venues' and 'turfs'
+  try {
+    await Promise.allSettled([
+      setDoc(doc(db, 'venues', cleanId), patch, { merge: true }),
+      setDoc(doc(db, 'turfs', cleanId), patch, { merge: true })
+    ]);
+  } catch (err) {
+    console.warn('apiUpdateVenue Firestore notice:', err);
+  }
+
+  return { success: true, venue: patch };
 }
 
 export async function apiDeleteVenue(venueInput, venueDataInput = null) {

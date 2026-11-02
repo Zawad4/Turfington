@@ -595,9 +595,13 @@ export default function Discovery({
 
   // Effect to recalculate distances if rawActivities changes and we have location
   useEffect(() => {
-    if (userCoordinates && rawActivities.length > 0) {
+    if (!rawActivities || rawActivities.length === 0) {
+      setActivities([]);
+      return;
+    }
+    if (userCoordinates) {
       applyRealDistances(userCoordinates.lat, userCoordinates.lng, rawActivities);
-    } else if (rawActivities.length > 0) {
+    } else {
       setActivities(rawActivities.map(a => ({ ...a, distance: '? km' })));
     }
   }, [rawActivities, userCoordinates, applyRealDistances]);

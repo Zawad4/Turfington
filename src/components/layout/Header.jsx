@@ -7,7 +7,6 @@ import {
   UserCircle,
   LayoutDashboard,
   Headphones,
-  Settings,
   LogOut,
   Menu
 } from 'lucide-react';
@@ -177,14 +176,6 @@ export default function Header({
                       label: 'Help & Support',
                       action: () => {
                         onOpenSupport();
-                        setShowUserMenu(false);
-                      }
-                    },
-                    {
-                      icon: Settings,
-                      label: 'Settings',
-                      action: () => {
-                        onNavClick('profile');
                         setShowUserMenu(false);
                       }
                     }

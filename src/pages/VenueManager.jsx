@@ -10,7 +10,8 @@ import {
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import { 
   apiFetchVenues, 
-  apiCreateVenue, 
+  apiCreateVenue,
+  apiUpdateVenue, 
   apiDeleteVenue, 
   apiFetchBookings, 
   apiUpdateBookingStatus, 
@@ -136,9 +137,19 @@ const SPORT_COLORS = {
 };
 
 /* ─── Add Venue Modal ────────────────────────────────── */
-function AddVenueModal({ onClose, onAdd }) {
+function AddVenueModal({ onClose, onAdd, venue = null }) {
   const { toast } = useToast();
   const getInitialCoords = () => {
+    if (venue?.latitude && venue?.longitude) {
+      const lat = parseFloat(venue.latitude);
+      const lng = parseFloat(venue.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+    }
+    if (venue?.lat && venue?.lng) {
+      const lat = parseFloat(venue.lat);
+      const lng = parseFloat(venue.lng);
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+    }
     try {
       const saved = localStorage.getItem('turfington_last_known_gps');
       if (saved) {
@@ -156,10 +167,19 @@ function AddVenueModal({ onClose, onAdd }) {
   };
 
   const initialCoords = getInitialCoords();
-  const [isGpsLocked, setIsGpsLocked] = useState(false);
+  const [isGpsLocked, setIsGpsLocked] = useState(Boolean(venue));
   const [form, setForm] = useState({
-    name: '', location: '', latitude: initialCoords.lat.toString(), longitude: initialCoords.lng.toString(), sports: [], pricePerHour: '',
-    phone: '', description: '', image: '', fitMode: 'cover', booking_mode: 'direct'
+    name: venue?.name || '',
+    location: venue?.location || venue?.address || '',
+    latitude: (venue?.latitude || venue?.lat || initialCoords.lat).toString(),
+    longitude: (venue?.longitude || venue?.lng || initialCoords.lng).toString(),
+    sports: Array.isArray(venue?.sports) && venue.sports.length > 0 ? venue.sports : (venue?.sport ? [venue.sport] : []),
+    pricePerHour: (venue?.pricePerHour || venue?.price_per_hr || '').toString(),
+    phone: venue?.phone || '',
+    description: venue?.description || '',
+    image: venue?.image || venue?.image_url || '',
+    fitMode: venue?.fitMode || 'cover',
+    booking_mode: venue?.booking_mode || (venue?.requires_approval ? 'request' : 'direct')
   });
   const [sportInput, setSportInput] = useState('');
   const [isDetectingGps, setIsDetectingGps] = useState(false);
@@ -319,22 +339,24 @@ function AddVenueModal({ onClose, onAdd }) {
     }
 
     const newVenue = {
-      id: Date.now(),
+      ...(venue || {}),
+      id: venue?.id || Date.now(),
       ...form,
       latitude: finalLat,
       longitude: finalLng,
       lat: finalLat,
       lng: finalLng,
       pricePerHour: parseInt(form.pricePerHour) || 0,
+      price_per_hr: parseInt(form.pricePerHour) || 0,
       booking_mode: form.booking_mode || 'direct',
       booking_type: form.booking_mode || 'direct',
       requires_approval: form.booking_mode === 'request',
-      rating: 5.0,
-      totalSlots: 12,
-      bookedToday: 0,
-      revenue: { week: 0, month: 0 },
-      slots: generateSlots(),
-      active: true,
+      rating: venue?.rating || 5.0,
+      totalSlots: venue?.totalSlots || 12,
+      bookedToday: venue?.bookedToday || 0,
+      revenue: venue?.revenue || { week: 0, month: 0 },
+      slots: venue?.slots || generateSlots(),
+      active: venue ? venue.active : true,
     };
     onAdd(newVenue);
     onClose();
@@ -345,15 +367,19 @@ function AddVenueModal({ onClose, onAdd }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 overflow-y-auto">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.7 }} exit={{ opacity: 0 }}
-        onClick={onClose} className="absolute inset-0 bg-black" />
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.85 }} exit={{ opacity: 0 }}
+        onClick={onClose} className="fixed inset-0 bg-black/85 backdrop-blur-md" />
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
-        className="relative glass-card w-full max-w-[580px] border border-white/10 shadow-2xl z-10 text-left mb-8">
+        className="relative bg-[#0d0f17] w-full max-w-[580px] border border-white/12 rounded-3xl shadow-2xl shadow-black/80 z-10 text-left mb-8 overflow-hidden">
 
-        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+        <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
           <div>
-            <h3 className="font-display font-black text-white text-lg uppercase tracking-tight">Add New Turf / Venue</h3>
-            <p className="text-[10px] text-neutral-500 mt-0.5">List your sports facility on Turfington with automatic GPS location calculation</p>
+            <h3 className="font-display font-black text-white text-lg uppercase tracking-tight">
+              {venue ? 'Edit Turf / Venue Listing' : 'Add New Turf / Venue'}
+            </h3>
+            <p className="text-[10px] text-neutral-400 mt-0.5">
+              {venue ? 'Update facility info, pricing, approval mode, or turf pictures' : 'List your sports facility on Turfington with automatic GPS location calculation'}
+            </p>
           </div>
           <button onClick={onClose} className="p-2 rounded-full bg-white/5 border border-white/10 text-neutral-400 hover:text-white">
             <X className="w-4 h-4" />
@@ -638,9 +664,9 @@ function AddVenueModal({ onClose, onAdd }) {
           </div>
 
           <button type="submit"
-            className="w-full py-4 bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs uppercase tracking-widest rounded-full transition-colors flex items-center justify-center space-x-2 cursor-pointer">
-            <Building2 className="w-4 h-4" />
-            <span>Save Turf Location</span>
+            className="w-full py-4 bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs uppercase tracking-widest rounded-full transition-colors flex items-center justify-center space-x-2 cursor-pointer shadow-lg shadow-violet-600/30">
+            {venue ? <CheckCircle className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+            <span>{venue ? 'Update Venue Details' : 'Save Turf Location'}</span>
           </button>
         </form>
       </motion.div>
@@ -1386,7 +1412,7 @@ function ManageOffersModal({ venue, onClose, venueOffers, setVenueOffers }) {
 }
 
 /* ─── Venue Card ─────────────────────────────────────── */
-function VenueCard({ venue, onToggleActive, onToggleBookingMode, onUpdateSlot, onBatchUpdateSlots, onDelete, venueOffers, setVenueOffers }) {
+function VenueCard({ venue, onToggleActive, onToggleBookingMode, onUpdateSlot, onBatchUpdateSlots, onDelete, onEdit, venueOffers, setVenueOffers }) {
   const [expanded, setExpanded] = useState(false);
   const [showOffersModal, setShowOffersModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -1500,6 +1526,14 @@ function VenueCard({ venue, onToggleActive, onToggleBookingMode, onUpdateSlot, o
 
         <div className="flex items-center space-x-2">
           <button
+            onClick={() => onEdit && onEdit(venue)}
+            title="Edit Venue Details"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-violet-600/20 border border-violet-500/35 text-violet-300 hover:bg-violet-600/30 transition-all cursor-pointer"
+          >
+            <Edit3 className="w-3.5 h-3.5 text-violet-400" />
+            <span>Edit Venue</span>
+          </button>
+          <button
             onClick={() => setShowOffersModal(true)}
             className="flex items-center space-x-1.5 px-4 py-1.5 rounded-full text-xs font-bold bg-indigo-600/20 border border-indigo-500/35 text-indigo-400 hover:bg-indigo-600/30 transition-all cursor-pointer">
             <Zap className="w-3.5 h-3.5 animate-pulse" />
@@ -1609,6 +1643,16 @@ function VenueCard({ venue, onToggleActive, onToggleBookingMode, onUpdateSlot, o
 export default function VenueManager({ user, venueOffers, setVenueOffers, onBackToPlayer, onOpenProfileSwitcher }) {
   const [venues, setVenues] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
+  const [editingVenue, setEditingVenue] = useState(null);
+
+  const handleEditVenue = async (updatedVenueData) => {
+    if (!editingVenue) return;
+    const vId = editingVenue.id;
+    await apiUpdateVenue(vId, updatedVenueData);
+    setVenues(prev => prev.map(v => v.id === vId ? { ...v, ...updatedVenueData } : v));
+    toast.success(`Venue "${updatedVenueData.name || 'Listing'}" updated successfully!`);
+    setEditingVenue(null);
+  };
 
   // Incoming Player Booking Requests
   const [ownerBookings, setOwnerBookings] = useState([]);
@@ -2084,6 +2128,7 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
                     onUpdateSlot={handleUpdateSlot}
                     onBatchUpdateSlots={handleBatchUpdateSlots}
                     onDelete={handleDelete}
+                    onEdit={(v) => setEditingVenue(v)}
                     venueOffers={venueOffers}
                     setVenueOffers={setVenueOffers}
                   />
@@ -2357,6 +2402,7 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
       {/* ── Add Venue Modal ─────────────────────────────── */}
       <AnimatePresence>
         {addOpen && <AddVenueModal onClose={() => setAddOpen(false)} onAdd={handleAdd} />}
+        {editingVenue && <AddVenueModal venue={editingVenue} onClose={() => setEditingVenue(null)} onAdd={handleEditVenue} />}
         {rejectingTarget && (
           <RejectBookingModal
             booking={rejectingTarget}

@@ -73,17 +73,13 @@ service cloud.firestore {
     }
 
     // ── 3. Turfs & Venues ──────────────────────────────────
-    // Discoverable publicly; only verified owners can modify/delete
+    // Discoverable publicly; all owners and athletes can sync venues in real-time
     match /turfs/{turfId} {
-      allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isDocOwner() || isAuthenticated();
+      allow read, write: if true;
     }
 
     match /venues/{venueId} {
-      allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isDocOwner() || isAuthenticated();
+      allow read, write: if true;
     }
 
     // ── 4. Marketplace Items ────────────────────────────────
