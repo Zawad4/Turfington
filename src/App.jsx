@@ -234,8 +234,20 @@ export default function App() {
   useEffect(() => {
     if (isOwner && activeTab === 'discovery') {
       setActiveTab('venue-manager');
+    } else if (!isOwner && activeTab === 'venue-manager') {
+      setActiveTab('landing');
     }
   }, [isOwner, activeTab]);
+
+  useEffect(() => {
+    const handleTabNav = (e) => {
+      if (e.detail) {
+        handleNavClick(e.detail);
+      }
+    };
+    window.addEventListener('turfington_navigate_tab', handleTabNav);
+    return () => window.removeEventListener('turfington_navigate_tab', handleTabNav);
+  }, []);
 
   const handleNavClick = (tab) => {
     const target = isOwner && tab === 'discovery' ? 'venue-manager' : tab;
@@ -267,7 +279,11 @@ export default function App() {
       setJoinedMatches(loadLocalState(`turfington_joined_matches_${selectedProfile.id}`, []));
       setMatchRequests(loadLocalState(`turfington_match_requests_${selectedProfile.id}`, []));
     }
-    handleNavClick(selectedProfile?.role === 'owner' ? 'venue-manager' : 'discovery');
+    const targetTab = selectedProfile?.role === 'owner' ? 'venue-manager' : 'landing';
+    setNavHistory((prev) => (prev[prev.length - 1] === targetTab ? prev : [...prev, targetTab]));
+    setActiveTab(targetTab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setMobileMenuOpen(false);
   };
 
   /* ── Match Request Action Handlers ─────────────────────────── */
@@ -490,7 +506,16 @@ export default function App() {
             {activeTab === 'community' && <Community user={user} setTab={handleNavClick} />}
             {activeTab === 'tournaments' && <Tournaments role={user?.role} user={user} />}
             {activeTab === 'venue-manager' && (
-              <VenueManager user={user} venueOffers={venueOffers} setVenueOffers={setVenueOffers} />
+              <VenueManager
+                user={user}
+                venueOffers={venueOffers}
+                setVenueOffers={setVenueOffers}
+                onBackToPlayer={() => {
+                  setNavHistory((prev) => (prev[prev.length - 1] === 'landing' ? prev : [...prev, 'landing']));
+                  setActiveTab('landing');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
             )}
             {activeTab === 'profile' && (
               <Profile

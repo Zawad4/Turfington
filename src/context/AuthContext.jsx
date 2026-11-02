@@ -39,6 +39,17 @@ export function AuthProvider({ children }) {
       if (fbUser) {
         setFirebaseUser(fbUser);
         try {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          let currentActive = null;
+          try { currentActive = stored ? JSON.parse(stored) : null; } catch {}
+
+          // If the user previously switched to a specific account, don't overwrite it with fbUser
+          if (currentActive && currentActive.id && currentActive.id !== fbUser.uid && currentActive.email !== fbUser.email) {
+            setUser(currentActive);
+            setAuthLoading(false);
+            return;
+          }
+
           let profile = await apiFetchProfile(fbUser.uid);
           if (!profile && fbUser.email) {
             profile = await apiFetchProfileByEmail(fbUser.email);

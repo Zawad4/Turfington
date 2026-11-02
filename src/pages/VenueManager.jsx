@@ -1293,7 +1293,7 @@ function VenueCard({ venue, onToggleActive, onUpdateSlot, onDelete, venueOffers,
 }
 
 /* ─── Main Page ──────────────────────────────────────── */
-export default function VenueManager({ user, venueOffers, setVenueOffers }) {
+export default function VenueManager({ user, venueOffers, setVenueOffers, onBackToPlayer }) {
   const [venues, setVenues] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
 
@@ -1474,7 +1474,7 @@ export default function VenueManager({ user, venueOffers, setVenueOffers }) {
           </p>
           <div className="flex flex-col gap-3">
             <button
-              onClick={() => { window.location.href = '/'; }}
+              onClick={() => { if (typeof onBackToPlayer === 'function') { onBackToPlayer(); } else { window.dispatchEvent(new CustomEvent('turfington_navigate_tab', { detail: 'landing' })); } }}
               className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white text-xs font-bold uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/25"
             >
               Back to Player Home
