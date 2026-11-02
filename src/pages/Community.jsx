@@ -122,7 +122,7 @@ export default function Community({ user, setTab }) {
   const [inboxItems, setInboxItems] = useState([]);
   const [communityGroups, setCommunityGroups] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
-  const [activeTabMode, setActiveTabMode] = useState('hubs'); // 'hubs' | 'direct'
+  const [activeTabMode, setActiveTabMode] = useState('direct'); // Default to 'direct' per user specification
   const [selectedSport, setSelectedSport] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [athletes, setAthletes] = useState([]);
@@ -288,6 +288,20 @@ export default function Community({ user, setTab }) {
         g.created_by !== 'turfington_official'
       );
       setCommunityGroups(validGroups);
+
+      // Check URL join link e.g. ?joinGroup=groupId
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const joinGid = params.get('joinGroup');
+        if (joinGid) {
+          const match = validGroups.find(g => (g.groupId === joinGid || g.id === joinGid));
+          if (match) {
+            handleSelectChat(match);
+            handleJoinGroup(match);
+            setActiveTabMode('hubs');
+          }
+        }
+      } catch {}
     });
 
     // 3. Fetch athletes for direct messaging (strictly excluding venue owners)
@@ -758,86 +772,50 @@ export default function Community({ user, setTab }) {
   };
 
   return (
-    <div className="pt-20 min-h-screen bg-[#08080a] text-white flex flex-col font-sans select-none antialiased">
-      {/* ── TOP HERO BANNER ───────────────────────────────────────── */}
-      <div className="border-b border-white/8 bg-[#0c0c10]/90 backdrop-blur-xl px-4 sm:px-6 lg:px-8 py-5">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-extrabold uppercase tracking-widest flex items-center gap-1.5">
-                <Radio className="w-3 h-3 text-emerald-400 animate-pulse" /> Live Firestore Sync
-              </span>
-              <span className="text-[11px] text-neutral-400">Persistent across Android, iOS & Web</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-display font-black text-white tracking-tight uppercase mt-1">
-              Community Hub & Live Chat
-            </h1>
-            <p className="text-xs text-neutral-400 font-light max-w-xl">
-              Connect with fellow athletes in Chennai, join specialized sports clubs, coordinate friendly turf matches, and chat in real-time.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {!notificationEnabled && (
-              <button
-                onClick={handleEnableNotifications}
-                className="px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-xs font-bold text-neutral-300 hover:text-white transition-all flex items-center gap-2 cursor-pointer shadow-sm"
-              >
-                <Bell className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Enable Push Notifications</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowCreateGroupModal(true)}
-              className="px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-white transition-all flex items-center gap-2 cursor-pointer shadow-sm"
-            >
-              <Users className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Create Sports Club</span>
-            </button>
-
-            <button
-              onClick={() => {
-                apiFetchAthletes(currentUserId).then(data => setAthletes(data));
-                setShowNewChatModal(true);
-              }}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(99,102,241,0.35)] cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Find Athletes</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── MAIN CONTENT CONTAINER (SPLIT PANE) ──────────────────── */}
-      <div className="max-w-[1550px] mx-auto w-full flex-grow flex p-3 sm:p-5 lg:p-6 gap-5 h-[calc(100vh-140px)]">
+    <div className="pt-16 sm:pt-20 min-h-screen bg-[#08080a] text-white flex flex-col font-sans select-none antialiased">
+      {/* ── MAIN CONTENT CONTAINER (FULL HEIGHT & ENLARGED) ───────── */}
+      <div className="max-w-[1650px] mx-auto w-full flex-grow flex p-2 sm:p-4 lg:p-5 gap-4 h-[calc(100vh-80px)]">
         
         {/* ── LEFT PANE: CONVERSATION LIST (ENLARGED & SPACIOUS) ── */}
         <div className={`w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 flex flex-col bg-[#101014] border border-white/8 rounded-3xl overflow-hidden shadow-2xl ${
           activeChat ? 'hidden lg:flex' : 'flex'
         }`}>
           
-          {/* Tabs: Sports Hubs vs Direct Chats */}
+          {/* Header Bar with Action Controls */}
+          <div className="p-3.5 border-b border-white/8 bg-white/[0.02] flex items-center justify-between">
+            <div>
+              <h2 className="font-display font-black text-white text-base tracking-tight uppercase">Messages</h2>
+              <p className="text-[10px] text-neutral-400">Direct DMs & Group Chats</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateGroupModal(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-[11px] font-bold text-neutral-200 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Create a new Group Chat"
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">New Group</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  apiFetchAthletes(currentUserId).then(data => setAthletes(data));
+                  setShowNewChatModal(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-[11px] font-bold text-white transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/30 cursor-pointer"
+                title="Find Athletes to Message"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>New DM</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Tabs: Direct DMs (FIRST) vs Group Chats (SECOND) */}
           <div className="p-3 border-b border-white/8 bg-white/[0.02]">
             <div className="grid grid-cols-2 p-1 bg-black/40 rounded-2xl border border-white/6">
-              <button
-                onClick={() => setActiveTabMode('hubs')}
-                className={`py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                  activeTabMode === 'hubs'
-                    ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/30'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Sports Hubs</span>
-                {totalUnreadHubs > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
-                    {totalUnreadHubs}
-                  </span>
-                )}
-              </button>
-
+              {/* 1. DIRECT DMS FIRST */}
               <button
                 onClick={() => setActiveTabMode('direct')}
                 className={`py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
@@ -854,6 +832,24 @@ export default function Community({ user, setTab }) {
                   </span>
                 )}
               </button>
+
+              {/* 2. GROUP CHATS SECOND */}
+              <button
+                onClick={() => setActiveTabMode('hubs')}
+                className={`py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  activeTabMode === 'hubs'
+                    ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/30'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Group Chats</span>
+                {totalUnreadHubs > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
+                    {totalUnreadHubs}
+                  </span>
+                )}
+              </button>
             </div>
 
             {/* Search Input */}
@@ -863,7 +859,7 @@ export default function Community({ user, setTab }) {
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder={activeTabMode === 'hubs' ? 'Search sports clubs, leagues...' : 'Search direct messages...'}
+                placeholder={activeTabMode === 'direct' ? 'Search direct messages...' : 'Search group chats...'}
                 className="w-full bg-black/40 border border-white/8 rounded-xl pl-9 pr-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-indigo-500/50 transition-colors"
               />
               {searchQuery && (
@@ -1273,12 +1269,25 @@ export default function Community({ user, setTab }) {
                 avatar: currentUserAvatar,
                 avatarUrl: currentUserAvatar
               }}
-              isGroup={activeChat.type === 'group'}
+              isGroup={activeChat.type === 'group' || !!activeChat.groupId}
               isMember={activeChat.type !== 'group' || joinedGroupIds.has(activeChat.id || activeChat.groupId)}
               onJoinGroup={() => handleJoinGroup(activeChat)}
               onLeaveGroup={() => handleLeaveGroup(activeChat)}
               onBack={() => setActiveChat(null)}
               contextBanner={activeChat.contextBanner}
+              isAdmin={Boolean(
+                activeChat &&
+                (activeChat.type === 'group' || !!activeChat.groupId) &&
+                (
+                  activeChat.creatorUid === currentUserId ||
+                  activeChat.created_by === currentUserId ||
+                  activeChat.admin === currentUserId ||
+                  activeChat.creator_id === currentUserId ||
+                  (user?.uid && activeChat.creatorUid === user.uid) ||
+                  (user?.id && activeChat.creatorUid === user.id) ||
+                  (user?.firebase_uid && activeChat.creatorUid === user.firebase_uid)
+                )
+              )}
             />
           ) : (
             <div className="flex-grow flex flex-col items-center justify-center p-8 text-center text-neutral-500 relative overflow-hidden">
@@ -1292,7 +1301,7 @@ export default function Community({ user, setTab }) {
 
                 <div>
                   <h3 className="font-display font-black text-white text-lg tracking-tight uppercase">
-                    Select a Sports Hub or Message an Athlete
+                    Select a Direct Message or Group Chat
                   </h3>
                   <p className="text-xs text-neutral-400 font-light mt-1">
                     Join live discussions, discover local players, book turf slots, and stay updated with your sports circle in real-time.
@@ -1302,7 +1311,7 @@ export default function Community({ user, setTab }) {
                 {/* Popular Sports Hubs Quick-Join */}
                 <div className="pt-4 border-t border-white/6 text-left space-y-2">
                   <p className="text-[10px] uppercase tracking-wider font-extrabold text-neutral-400">
-                    Featured Community Hubs
+                    Featured Group Chats
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {communityGroups.slice(0, 4).map(group => (
@@ -1519,9 +1528,9 @@ export default function Community({ user, setTab }) {
               <div className="p-5 border-b border-white/8 flex items-center justify-between">
                 <div>
                   <h3 className="font-display font-black text-white text-base tracking-tight uppercase">
-                    Create Sports Club Hub
+                    Create Group Chat
                   </h3>
-                  <p className="text-[11px] text-neutral-400">Start an open group for match coordination</p>
+                  <p className="text-[11px] text-neutral-400">Start a group chat for your sports circle and matches</p>
                 </div>
                 <button
                   onClick={() => {
@@ -1536,7 +1545,7 @@ export default function Community({ user, setTab }) {
               </div>
 
               <form onSubmit={handleCreateGroup} className="p-5 space-y-4">
-                {/* Club Profile Picture (PFP) Upload */}
+                {/* Group Chat Icon / Picture (Optional) Upload */}
                 <div>
                   <label className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider block mb-2">
                     Club Profile Picture (PFP)

@@ -4,7 +4,7 @@ import {
   Send, Paperclip, Smile, Image as ImageIcon, Check, CheckCheck,
   ChevronLeft, MoreVertical, Reply, Trash2, Edit2, ShieldAlert,
   Ban, X, Loader2, FileText, CornerDownRight, Heart, ThumbsUp, Laugh, Flame, Trophy,
-  Lock, ShieldCheck, Shield
+  Lock, ShieldCheck, Shield, Copy, Plus, UserPlus, Users
 } from 'lucide-react';
 import {
   apiAddMessageReaction,
@@ -14,6 +14,7 @@ import {
   subscribeToConversationRealtime
 } from '../services/db';
 import {
+  joinCommunityGroup,
   getLocalMessages,
   subscribeToMessages,
   loadMoreMessages,
@@ -36,9 +37,91 @@ export default function ChatWindowEnhanced({
   isMember = true,
   onJoinGroup = null,
   onLeaveGroup = null,
-  contextBanner = null // { type: 'marketplace'|'venue'|'game', title, price, image, subtitle }
+  contextBanner = null, // { type: 'marketplace'|'venue'|'game', title, price, image, subtitle }
+  isAdmin = false
 }) {
   const { toast } = useToast();
+
+  // Admin Group Invite & Direct Add States
+  const [showAdminInviteModal, setShowAdminInviteModal] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [athleteSearch, setAthleteSearch] = useState('');
+  const [athletesList, setAthletesList] = useState([]);
+  const [groupMemberUids, setGroupMemberUids] = useState(() => {
+    const set = new Set();
+    if (chat?.participants && Array.isArray(chat.participants)) {
+      chat.participants.forEach(p => set.add(typeof p === 'string' ? p : (p.id || p.uid)));
+    }
+    return set;
+  });
+
+  const currentUserId = currentUser?.id || currentUser?.uid || currentUser?.firebase_uid || 'usr_me';
+  const effectiveIsAdmin = isGroup && (
+    isAdmin ||
+    chat.creatorUid === currentUserId ||
+    chat.created_by === currentUserId ||
+    chat.admin === currentUserId ||
+    chat.creator_id === currentUserId ||
+    (currentUser?.uid && chat.creatorUid === currentUser.uid) ||
+    (currentUser?.id && chat.creatorUid === currentUser.id)
+  );
+
+  const currentGroupId = chat?.groupId || chat?.id || chat?.conversationId || '';
+  const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/?tab=community&joinGroup=${encodeURIComponent(currentGroupId)}`;
+
+  useEffect(() => {
+    if (showAdminInviteModal && athletesList.length === 0) {
+      if (typeof apiFetchAthletes === 'function') {
+        apiFetchAthletes(currentUserId).then(res => {
+          if (Array.isArray(res)) setAthletesList(res);
+        });
+      }
+    }
+  }, [showAdminInviteModal, currentUserId, athletesList.length]);
+
+  const handleCopyInviteLink = () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(inviteLink);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = inviteLink;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+      toast.success('Invite link copied! Anyone with this link can join this group chat.', 'Link Copied');
+    } catch {
+      toast.error('Could not copy link to clipboard.');
+    }
+  };
+
+  const handleDirectAddAthlete = async (athlete) => {
+    if (!athlete || !currentGroupId) return;
+    try {
+      if (typeof joinCommunityGroup === 'function') {
+        await joinCommunityGroup(currentGroupId, athlete);
+      }
+      setGroupMemberUids(prev => new Set([...prev, athlete.id, athlete.uid]));
+      toast.success(`Added ${athlete.name || athlete.full_name || 'Athlete'} to the group chat!`, 'Member Added');
+    } catch (err) {
+      console.warn('Error adding athlete to group:', err);
+      toast.error('Could not add member to group.');
+    }
+  };
+
+  const filteredAthletes = useMemo(() => {
+    if (!athleteSearch.trim()) return athletesList;
+    const q = athleteSearch.toLowerCase().trim();
+    return athletesList.filter(a => {
+      const name = (a.name || a.full_name || '').toLowerCase();
+      const handle = (a.player_id || a.handle || a.email || '').toLowerCase();
+      return name.includes(q) || handle.includes(q);
+    });
+  }, [athletesList, athleteSearch]);
   const conversationId = chat?.id || chat?.conversationId || chat?.groupId;
 
   // 0. Instantly populate messages from local persistent store (0ms thread continuation!)
@@ -86,7 +169,6 @@ export default function ChatWindowEnhanced({
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const currentUserId = currentUser?.id || currentUser?.uid || currentUser?.firebase_uid || 'usr_me';
   const currentUserName = currentUser?.name || currentUser?.displayName || currentUser?.full_name || 'You';
   const currentUserAvatar = currentUser?.avatar || currentUser?.avatarUrl || currentUser?.avatar_url || '';
 
@@ -517,6 +599,19 @@ export default function ChatWindowEnhanced({
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span className="hidden sm:inline">AES-256 E2EE</span>
           </button>
+          {/* Admin Group Controls: ONLY visible if isGroup AND effectiveIsAdmin */}
+          {isGroup && effectiveIsAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowAdminInviteModal(true)}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600/20 hover:bg-indigo-600/35 text-indigo-300 hover:text-white border border-indigo-500/30 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Admin: Invite or Directly Add Members"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Add / Invite</span>
+            </button>
+          )}
+
           {isGroup && onJoinGroup && onLeaveGroup && (
             <button
               type="button"
@@ -533,7 +628,7 @@ export default function ChatWindowEnhanced({
                   <span>Joined</span>
                 </>
               ) : (
-                <span>+ Join Hub</span>
+                <span>+ Join Group</span>
               )}
             </button>
           )}
@@ -555,6 +650,17 @@ export default function ChatWindowEnhanced({
                   exit={{ opacity: 0, scale: 0.95 }}
                   className="absolute right-0 mt-2 w-48 bg-[#121215] border border-white/10 rounded-2xl shadow-2xl z-30 overflow-hidden py-1"
                 >
+                  {isGroup && effectiveIsAdmin && (
+                    <button
+                      onClick={() => {
+                        setHeaderMenuOpen(false);
+                        setShowAdminInviteModal(true);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-xs text-indigo-300 hover:bg-indigo-500/10 flex items-center gap-2 transition-colors cursor-pointer font-bold"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" /> Invite / Add People
+                    </button>
+                  )}
                   <button
                     onClick={handleBlockUser}
                     className="w-full text-left px-4 py-2.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 transition-colors cursor-pointer"
