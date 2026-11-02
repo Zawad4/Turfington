@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin, Users, Clock, Award, Star, Calendar, MessageSquare, Heart, Share2, Compass, Plus, Flame } from 'lucide-react';
-import { apiCreateDirectChat, apiSubscribeVenues, apiFetchHostedMatches, apiJoinHostedMatch, apiLeaveHostedMatch, apiCreateBooking } from '../services/db';
+import { apiCreateDirectChat, apiSubscribeVenues, apiFetchHostedMatches, apiJoinHostedMatch, apiLeaveHostedMatch, apiCreateBooking, apiFetchTournaments } from '../services/db';
 import { useToast } from '../context';
 import { formatTime12Hour } from '../utils/formatters';
 
@@ -202,39 +202,45 @@ export default function Home({
     };
   }, []);
 
-  const [tournaments, setTournaments] = useState([
-    {
-      id: 301,
-      title: 'Weekend Football Gold Cup',
-      image: '/trophy.png',
-      prizePool: '₹2,00,000',
-      date: 'June 6-7, 2026',
-      initialHours: 24,
-      initialMinutes: 45,
-      initialSeconds: 12
-    },
-    {
-      id: 302,
-      title: 'Championship Table Tennis Open',
-      image: 'https://images.unsplash.com/photo-1611251135345-18c56206b863?q=80&w=800',
-      prizePool: '₹83,000',
-      date: 'June 13, 2026',
-      initialHours: 96,
-      initialMinutes: 18,
-      initialSeconds: 40
-    }
-  ]);
-
-  // Live tournament countdown timers
+  const [tournaments, setTournaments] = useState([]);
   const [timers, setTimers] = useState({});
 
   useEffect(() => {
-    // Initialize timers
-    const initialTimers = {};
-    tournaments.forEach(t => {
-      initialTimers[t.id] = t.initialHours * 3600 + t.initialMinutes * 60 + t.initialSeconds;
-    });
-    setTimers(initialTimers);
+    let isMounted = true;
+    const loadRealTournaments = async () => {
+      try {
+        const list = await apiFetchTournaments();
+        if (isMounted) {
+          setTournaments(list);
+          const initialTimers = {};
+          list.forEach(t => {
+            const h = t.initialHours || 48;
+            const m = t.initialMinutes || 0;
+            const s = t.initialSeconds || 0;
+            initialTimers[t.id] = h * 3600 + m * 60 + s;
+          });
+          setTimers(initialTimers);
+        }
+      } catch (e) {}
+    };
+
+    loadRealTournaments();
+
+    const handleCreated = () => { loadRealTournaments(); };
+    window.addEventListener('turfington_tournament_created', handleCreated);
+    window.addEventListener('turfington_tournament_updated', handleCreated);
+    window.addEventListener('turfington_tournament_deleted', handleCreated);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('turfington_tournament_created', handleCreated);
+      window.removeEventListener('turfington_tournament_updated', handleCreated);
+      window.removeEventListener('turfington_tournament_deleted', handleCreated);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (tournaments.length === 0) return;
 
     const interval = setInterval(() => {
       setTimers(prev => {
@@ -708,43 +714,64 @@ export default function Home({
 
           {/* 6. EVENTS NEAR YOU */}
           <div>
-            <h2 className="text-2xl font-black font-display tracking-tight uppercase mb-6">Events Near You</h2>
-            <div className="space-y-6">
-              {tournaments.map(t => (
-                <div 
-                  key={t.id}
-                  className="glass-card overflow-hidden border border-white/5 hover:border-white/10 transition-all text-left relative"
-                >
-                  <div className="h-32 overflow-hidden relative">
-                    <img src={t.image} alt={t.title} className="w-full h-full object-cover brightness-85" />
-                    <div className="absolute inset-0 bg-black/20" />
-                    
-                    <div className="absolute top-4 left-4 bg-indigo-600/90 backdrop-blur-md border border-indigo-500/20 rounded px-2.5 py-1">
-                      <p className="text-[8px] text-neutral-200 uppercase tracking-widest font-bold">Prize Pool</p>
-                      <p className="text-sm font-black text-white">{t.prizePool}</p>
-                    </div>
-                  </div>
-
-                  <div className="p-5">
-                    <h3 className="font-bold text-white font-display text-base leading-snug">{t.title}</h3>
-                    <p className="text-xs text-neutral-400 mt-1">{t.date}</p>
-
-                    {/* Countdown Timer */}
-                    <div className="mt-5 p-3.5 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between">
-                      <div>
-                        <p className="text-[8px] text-neutral-500 uppercase tracking-widest font-bold">Starts In</p>
-                        <p className="text-base font-black text-indigo-400 font-display mt-0.5 tracking-wider">
-                          {formatTimer(timers[t.id])}
-                        </p>
-                      </div>
-                      <button className="text-xs font-bold bg-white text-black px-4 py-2 rounded-full hover:bg-neutral-200 transition-colors shadow-md">
-                        Register
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-black font-display tracking-tight uppercase">Events Near You</h2>
+              <button onClick={() => setTab('tournaments')} className="text-xs text-indigo-400 font-bold hover:underline cursor-pointer">
+                View All
+              </button>
             </div>
+            {tournaments.length === 0 ? (
+              <div className="glass-card p-6 text-center border border-white/5 rounded-2xl">
+                <Award className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
+                <p className="text-xs text-neutral-400 font-medium">No upcoming tournaments scheduled right now.</p>
+                <button 
+                  onClick={() => setTab('tournaments')}
+                  className="mt-3 px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white text-[11px] font-bold border border-white/10 transition-colors cursor-pointer"
+                >
+                  Explore Tournaments
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {tournaments.map(t => (
+                  <div 
+                    key={t.id}
+                    className="glass-card overflow-hidden border border-white/5 hover:border-white/10 transition-all text-left relative"
+                  >
+                    <div className="h-32 overflow-hidden relative">
+                      <img src={t.banner || t.image || t.pfp || '/trophy.png'} alt={t.title} className="w-full h-full object-cover brightness-85" />
+                      <div className="absolute inset-0 bg-black/20" />
+                      
+                      <div className="absolute top-4 left-4 bg-indigo-600/90 backdrop-blur-md border border-indigo-500/20 rounded px-2.5 py-1">
+                        <p className="text-[8px] text-neutral-200 uppercase tracking-widest font-bold">Prize Pool</p>
+                        <p className="text-sm font-black text-white">{t.prizePool}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-5">
+                      <h3 className="font-bold text-white font-display text-base leading-snug">{t.title}</h3>
+                      <p className="text-xs text-neutral-400 mt-1">{t.date}</p>
+
+                      {/* Countdown Timer */}
+                      <div className="mt-5 p-3.5 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between">
+                        <div>
+                          <p className="text-[8px] text-neutral-500 uppercase tracking-widest font-bold">Starts In</p>
+                          <p className="text-base font-black text-indigo-400 font-display mt-0.5 tracking-wider">
+                            {formatTimer(timers[t.id])}
+                          </p>
+                        </div>
+                        <button 
+                          onClick={() => setTab('tournaments')}
+                          className="text-xs font-bold bg-white text-black px-4 py-2 rounded-full hover:bg-neutral-200 transition-colors shadow-md cursor-pointer"
+                        >
+                          Register
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>

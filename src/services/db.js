@@ -3933,3 +3933,314 @@ export async function apiLikePostComment(postId, commentId, userId) {
 
   return { success: true, comments: updatedList };
 }
+
+
+// ── TOURNAMENTS API ─────────────────────────────────────────────────────────
+
+export function purgeLegacyTestTournaments() {
+  if (typeof window === 'undefined') return;
+  try {
+    const testTitles = [
+      'vanguard weekend football gold cup',
+      'championship table tennis open',
+      'smash club badminton pro series',
+      'hyperbowl league night championship',
+      'vanguard summer football cup',
+      'weekend football gold cup'
+    ];
+    const testIds = [1, 2, 3, 4, 101, 301, 302, '1', '2', '3', '4', '101', '301', '302'];
+
+    const sRegs = localStorage.getItem('turfington_registered_tournaments');
+    if (sRegs) {
+      const pRegs = JSON.parse(sRegs);
+      if (Array.isArray(pRegs)) {
+        const filtered = pRegs.filter(id => !testIds.includes(id));
+        localStorage.setItem('turfington_registered_tournaments', JSON.stringify(filtered));
+      }
+    }
+
+    const sTournaments = localStorage.getItem('turfington_tournaments');
+    if (sTournaments) {
+      const pTournaments = JSON.parse(sTournaments);
+      if (Array.isArray(pTournaments)) {
+        const filtered = pTournaments.filter(t => {
+          if (!t) return false;
+          if (testIds.includes(t.id)) return false;
+          const title = String(t.title || '').trim().toLowerCase();
+          if (testTitles.includes(title)) return false;
+          const creatorId = t.creator_id || t.creatorUid || t.userId || t.owner_id;
+          if (!creatorId) return false;
+          return true;
+        });
+        localStorage.setItem('turfington_tournaments', JSON.stringify(filtered));
+      }
+    }
+  } catch (e) {}
+}
+
+export async function apiFetchTournaments() {
+  purgeLegacyTestTournaments();
+
+  const testTitles = [
+    'vanguard weekend football gold cup',
+    'championship table tennis open',
+    'smash club badminton pro series',
+    'hyperbowl league night championship',
+    'vanguard summer football cup',
+    'weekend football gold cup'
+  ];
+  const testIds = [1, 2, 3, 4, 101, 301, 302, '1', '2', '3', '4', '101', '301', '302'];
+
+  let list = [];
+  try {
+    const snap = await getDocs(collection(db, 'tournaments'));
+    if (!snap.empty) {
+      snap.forEach(d => {
+        const data = d.data();
+        const id = d.id;
+        if (testIds.includes(id)) return;
+        const titleLower = String(data.title || '').toLowerCase().trim();
+        if (testTitles.includes(titleLower)) return;
+        const creatorId = data.creator_id || data.creatorUid || data.userId || data.owner_id;
+        // Strictly only show tournaments created by authenticated users
+        if (creatorId && creatorId !== 'usr_guest') {
+          list.push({ id, ...data });
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('apiFetchTournaments Firestore notice:', err);
+  }
+
+  // Merge with locally created tournaments
+  if (typeof window !== 'undefined') {
+    try {
+      const s = localStorage.getItem('turfington_tournaments');
+      if (s) {
+        const localList = JSON.parse(s);
+        if (Array.isArray(localList)) {
+          localList.forEach(t => {
+            if (!t || testIds.includes(t.id)) return;
+            const titleLower = String(t.title || '').toLowerCase().trim();
+            if (testTitles.includes(titleLower)) return;
+            const creatorId = t.creator_id || t.creatorUid || t.userId || t.owner_id;
+            if (creatorId && creatorId !== 'usr_guest' && !list.some(x => x.id === t.id)) {
+              list.push(t);
+            }
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Sort by created date descending
+  list.sort((a, b) => {
+    const timeA = new Date(a.createdAt || a.created_at || 0).getTime();
+    const timeB = new Date(b.createdAt || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+
+  return list;
+}
+
+export async function apiCreateTournament(tournamentData, user) {
+  const creatorId = user?.uid || user?.firebase_uid || user?.id;
+  if (!creatorId || creatorId === 'usr_guest') {
+    throw new Error('You must be signed in with an authenticated account to create a tournament.');
+  }
+
+  const tournamentId = 'trn_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  const nowIso = new Date().toISOString();
+
+  const newTournament = {
+    id: tournamentId,
+    title: tournamentData.title?.trim() || 'Untitled Tournament',
+    sport: tournamentData.sport || 'Football',
+    image: tournamentData.banner || tournamentData.image || tournamentData.pfp || '',
+    banner: tournamentData.banner || tournamentData.image || '',
+    pfp: tournamentData.pfp || tournamentData.banner || tournamentData.image || '',
+    prizePool: tournamentData.prizePool ? (String(tournamentData.prizePool).startsWith('₹') ? tournamentData.prizePool : `₹${tournamentData.prizePool}`) : '₹0',
+    prizeRaw: parseInt(String(tournamentData.prizePool || 0).replace(/\D/g, ''), 10) || 0,
+    entryFee: tournamentData.entryFee ? (String(tournamentData.entryFee).startsWith('₹') ? tournamentData.entryFee : `₹${tournamentData.entryFee}`) : '₹0',
+    entryFeeRaw: parseInt(String(tournamentData.entryFee || 0).replace(/\D/g, ''), 10) || 0,
+    date: tournamentData.date || (tournamentData.startDate ? `${tournamentData.startDate}${tournamentData.endDate ? ' – ' + tournamentData.endDate : ''}` : 'Upcoming'),
+    startDate: tournamentData.startDate || '',
+    endDate: tournamentData.endDate || '',
+    registrationDeadline: tournamentData.registrationDeadline || '',
+    venue: tournamentData.venue?.trim() || 'Sports Arena',
+    city: tournamentData.city?.trim() || 'City Arena',
+    slots: parseInt(tournamentData.slots, 10) || 16,
+    filled: 0,
+    status: 'Open',
+    format: tournamentData.format || 'Knockout',
+    level: tournamentData.level || 'All Levels',
+    teamSize: tournamentData.teamSize || '1',
+    organizer: tournamentData.organizer || user?.full_name || user?.name || user?.displayName || 'Tournament Host',
+    creator_id: creatorId,
+    creator_name: user?.full_name || user?.name || user?.displayName || 'Tournament Host',
+    creator_role: user?.role || 'owner',
+    owner_id: creatorId,
+    user_id: creatorId,
+    contactPhone: tournamentData.contactPhone || user?.phone || '',
+    contactEmail: tournamentData.contactEmail || user?.email || '',
+    rules: tournamentData.rules || '',
+    description: tournamentData.description || '',
+    registrations: [],
+    registered: false,
+    createdAt: nowIso,
+    created_at: nowIso
+  };
+
+  // 1. Write to Firestore
+  try {
+    await setDoc(doc(db, 'tournaments', tournamentId), newTournament);
+  } catch (err) {
+    console.warn('apiCreateTournament Firestore write warning:', err);
+  }
+
+  // 2. Cache in localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const s = localStorage.getItem('turfington_tournaments');
+      const existing = s ? JSON.parse(s) : [];
+      const updated = [newTournament, ...existing.filter(t => t.id !== tournamentId)];
+      localStorage.setItem('turfington_tournaments', JSON.stringify(updated));
+    } catch (e) {}
+
+    try {
+      window.dispatchEvent(new CustomEvent('turfington_tournament_created', { detail: newTournament }));
+    } catch (e) {}
+  }
+
+  return newTournament;
+}
+
+export async function apiRegisterTournament(tournamentId, user, registrationData = {}) {
+  const currentUid = user?.uid || user?.id || user?.firebase_uid;
+  if (!currentUid) throw new Error('Authentication required to register for tournament');
+
+  const passId = `TRN-${Math.floor(100000 + Math.random() * 900000)}`;
+  const nowIso = new Date().toISOString();
+
+  const regEntry = {
+    passId,
+    name: registrationData.captainName || user?.full_name || user?.name || 'Athlete',
+    team: registrationData.teamName || 'Solo Competitor',
+    uid: currentUid,
+    userId: currentUid,
+    paid: true,
+    amount: registrationData.totalAmount || 0,
+    registeredAt: nowIso
+  };
+
+  // 1. Update Firestore
+  try {
+    const trnRef = doc(db, 'tournaments', tournamentId);
+    await updateDoc(trnRef, {
+      filled: increment(1),
+      registrations: arrayUnion(regEntry)
+    });
+  } catch (err) {
+    console.warn('apiRegisterTournament Firestore update warning:', err);
+  }
+
+  // 2. Update localStorage tournaments
+  if (typeof window !== 'undefined') {
+    try {
+      const sRegs = localStorage.getItem('turfington_registered_tournaments');
+      const regs = sRegs ? JSON.parse(sRegs) : [];
+      if (!regs.includes(tournamentId)) {
+        regs.push(tournamentId);
+        localStorage.setItem('turfington_registered_tournaments', JSON.stringify(regs));
+      }
+
+      const sTournaments = localStorage.getItem('turfington_tournaments');
+      if (sTournaments) {
+        const list = JSON.parse(sTournaments);
+        const updated = list.map(t => {
+          if (t.id === tournamentId) {
+            const currentRegs = Array.isArray(t.registrations) ? t.registrations : [];
+            return {
+              ...t,
+              filled: (t.filled || 0) + 1,
+              registrations: [...currentRegs, regEntry],
+              registered: true
+            };
+          }
+          return t;
+        });
+        localStorage.setItem('turfington_tournaments', JSON.stringify(updated));
+      }
+    } catch (e) {}
+
+    // 3. Create user booking pass in user bookings
+    try {
+      const uKey = `turfington_user_bookings_${currentUid}`;
+      const sUserBookings = localStorage.getItem(uKey);
+      const userBookings = sUserBookings ? JSON.parse(sUserBookings) : [];
+      const tournamentBooking = {
+        id: passId,
+        booking_id: passId,
+        type: 'tournament',
+        title: registrationData.tournamentTitle || 'Tournament Entry',
+        venue: registrationData.venue || 'Sports Arena',
+        venue_name: registrationData.venue || 'Sports Arena',
+        date: registrationData.date || 'Upcoming',
+        time: registrationData.time || '09:00 AM',
+        slot_time: registrationData.time || '09:00 AM',
+        sport: registrationData.sport || 'Sports Activity',
+        teamName: registrationData.teamName || 'Solo',
+        captainName: registrationData.captainName || user?.full_name || user?.name || 'Athlete',
+        price: registrationData.totalAmount || 0,
+        amount: registrationData.totalAmount || 0,
+        amount_paid: registrationData.totalAmount || 0,
+        status: 'confirmed',
+        is_prepaid: true,
+        user_id: currentUid,
+        createdAt: nowIso
+      };
+      userBookings.unshift(tournamentBooking);
+      localStorage.setItem(uKey, JSON.stringify(userBookings));
+
+      // Also append to global user bookings
+      const sAll = localStorage.getItem('turfington_user_bookings');
+      if (sAll) {
+        const all = JSON.parse(sAll);
+        localStorage.setItem('turfington_user_bookings', JSON.stringify([tournamentBooking, ...all.filter(b => b.id !== passId)]));
+      }
+    } catch (e) {}
+
+    try {
+      window.dispatchEvent(new CustomEvent('turfington_tournament_updated', {
+        detail: { tournamentId, registration: regEntry }
+      }));
+      window.dispatchEvent(new CustomEvent('turfington_booking_created', { detail: { id: passId } }));
+    } catch (e) {}
+  }
+
+  return { success: true, passId, regEntry };
+}
+
+export async function apiDeleteTournament(tournamentId, userId) {
+  if (!tournamentId) return { success: false };
+
+  try {
+    await deleteDoc(doc(db, 'tournaments', tournamentId));
+  } catch (err) {
+    console.warn('apiDeleteTournament Firestore delete warning:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const s = localStorage.getItem('turfington_tournaments');
+      if (s) {
+        const list = JSON.parse(s);
+        const filtered = list.filter(t => t.id !== tournamentId);
+        localStorage.setItem('turfington_tournaments', JSON.stringify(filtered));
+      }
+      window.dispatchEvent(new CustomEvent('turfington_tournament_deleted', { detail: { tournamentId } }));
+    } catch (e) {}
+  }
+
+  return { success: true };
+}

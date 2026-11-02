@@ -209,6 +209,26 @@ service cloud.firestore {
       allow delete: if isDocOwner();
     }
 
+    // ── 9. Tournaments ──────────────────────────────────────
+    match /tournaments/{tournamentId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && (
+        isNewDocOwner() ||
+        request.resource.data.creator_id == request.auth.uid ||
+        request.resource.data.creatorId == request.auth.uid ||
+        request.resource.data.creatorUid == request.auth.uid ||
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.owner_id == request.auth.uid
+      );
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && (
+        isDocOwner() ||
+        resource.data.creator_id == request.auth.uid ||
+        resource.data.creatorId == request.auth.uid ||
+        resource.data.creatorUid == request.auth.uid
+      );
+    }
+
     // Default Fallback: DENY all other access
     match /{allPaths=**} {
       allow read, write: if false;

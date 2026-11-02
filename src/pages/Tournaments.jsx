@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import SportIcon from '../components/SportIcon';
 import { formatTime12Hour } from '../utils/formatters';
+import { apiFetchTournaments, apiCreateTournament, apiRegisterTournament, apiDeleteTournament, purgeLegacyTestTournaments } from '../services/db';
 
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
   ? import.meta.env.VITE_API_URL
@@ -25,110 +26,6 @@ const DEFAULT_SPORT_IMAGES = {
   Cricket: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=800'
 };
 
-const TOURNAMENTS = [
-  {
-    id: 1,
-    title: 'Vanguard Weekend Football Gold Cup',
-    sport: 'Football',
-    image: '/trophy.png',
-    banner: '/trophy.png',
-    pfp: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=300',
-    prizePool: '₹5,000',
-    prizeRaw: 5000,
-    entryFee: '₹249',
-    date: 'June 14–15, 2026',
-    venue: 'Vanguard Sports Arena, Chennai',
-    slots: 16,
-    filled: 11,
-    status: 'Open',
-    format: 'Knockout',
-    level: 'Intermediate',
-    organizer: 'Vanguard FC',
-    registered: false,
-  },
-  {
-    id: 2,
-    title: 'Championship Table Tennis Open',
-    sport: 'Table Tennis',
-    image: 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=800',
-    banner: 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=800',
-    pfp: 'https://images.unsplash.com/photo-1534158914592-062992fbe900?q=80&w=300',
-    prizePool: '₹2,500',
-    prizeRaw: 2500,
-    entryFee: '₹149',
-    date: 'June 21, 2026',
-    venue: 'Elite Courts, Chennai',
-    slots: 32,
-    filled: 28,
-    status: 'Open',
-    format: 'Round Robin + Knockout',
-    level: 'Advanced',
-    organizer: 'TT Masters League',
-    registered: true,
-  },
-  {
-    id: 3,
-    title: 'Smash Club Badminton Pro Series',
-    sport: 'Badminton',
-    image: '/smash_club_badminton.jpg',
-    banner: '/smash_club_badminton.jpg',
-    pfp: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=300',
-    prizePool: '₹4,000',
-    prizeRaw: 4000,
-    entryFee: '₹199',
-    date: 'July 5–6, 2026',
-    venue: 'Smash Club, Chennai',
-    slots: 24,
-    filled: 10,
-    status: 'Open',
-    format: 'League + Knockout',
-    level: 'All Levels',
-    organizer: 'Badminton Elite Doubles',
-    registered: false,
-  },
-  {
-    id: 4,
-    title: 'HyperBowl League Night Championship',
-    sport: 'Bowling',
-    image: '/bowling.jpg',
-    banner: '/bowling.jpg',
-    pfp: 'https://images.unsplash.com/photo-1545803928-8e6d97e59c56?q=80&w=300',
-    prizePool: '₹3,000',
-    prizeRaw: 3000,
-    entryFee: '₹99',
-    date: 'June 28, 2026',
-    venue: 'Apex Bowling & Games, Chennai',
-    slots: 20,
-    filled: 20,
-    status: 'Full',
-    format: 'League',
-    level: 'Beginner Friendly',
-    organizer: 'Bowling League Syndicate',
-    registered: false,
-  },
-];
-
-/* Owner's managed tournaments */
-const MY_TOURNAMENTS = [
-  {
-    id: 101,
-    title: 'Vanguard Summer Football Cup',
-    sport: 'Football',
-    image: '/trophy.png',
-    prizePool: '₹5,000',
-    entryFee: '₹299',
-    date: 'July 12–13, 2026',
-    venue: 'Vanguard Sports Arena, Chennai',
-    slots: 16,
-    filled: 7,
-    status: 'Draft',
-    registrations: [
-      { name: 'Rahul Sharma', team: 'Alpha FC', paid: true },
-      { name: 'Sonia Verma', team: 'Star Strikers', paid: true },
-      { name: 'Amit Patel', team: 'Thunder United', paid: false },
-    ],
-  },
-];
 
 const LEVEL_COLORS = {
   'Advanced': 'text-rose-400 bg-rose-500/10 border-rose-500/20',
@@ -211,67 +108,24 @@ function TournamentRegistrationModal({ tournament, user, onClose, onSuccess }) {
     setStep('payment');
   };
 
-  const handlePayNow = () => {
+  const handlePayNow = async () => {
     setStep('processing');
     const passId = `TRN-${Math.floor(100000 + Math.random() * 900000)}`;
     setTicketPassId(passId);
 
-    // Save tournament registration and user booking
     try {
-      const currentRegs = JSON.parse(localStorage.getItem('turfington_registered_tournaments') || '[]');
-      if (!currentRegs.includes(tournament?.id)) {
-        currentRegs.push(tournament?.id);
-        localStorage.setItem('turfington_registered_tournaments', JSON.stringify(currentRegs));
-      }
-      const uid = user?.uid || user?.id || user?.firebase_uid;
-      if (uid) {
-        const uKey = `turfington_user_bookings_${uid}`;
-        const userBookings = JSON.parse(localStorage.getItem(uKey) || '[]');
-        const tournamentBooking = {
-          id: passId,
-          booking_id: passId,
-          type: 'tournament',
-          title: tournament?.title || 'Tournament',
-          venue: tournament?.venue || 'Venue',
-          venue_name: tournament?.venue || 'Venue',
-          date: tournament?.date || 'Upcoming',
-          time: tournament?.time || '09:00 AM',
-          slot_time: tournament?.time || '09:00 AM',
-          sport: tournament?.sport || 'Football',
-          teamName: formData.teamName,
-          captainName: formData.captainName,
-          price: totalAmount,
-          amount: totalAmount,
-          amount_paid: totalAmount,
-          status: 'confirmed',
-          is_prepaid: true,
-          createdAt: new Date().toISOString()
-        };
-        userBookings.unshift(tournamentBooking);
-        localStorage.setItem(uKey, JSON.stringify(userBookings));
-
-        // Sync with API backend
-        fetch(`${API_BASE}/api/bookings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: passId,
-            user_id: uid,
-            userId: uid,
-            userName: formData.captainName || user?.displayName || 'Athlete',
-            venue: tournament?.venue || 'Venue',
-            sport: tournament?.sport || 'Football',
-            date: tournament?.date || 'Upcoming',
-            time: tournament?.time || '09:00 AM',
-            price: totalAmount,
-            amount: totalAmount,
-            status: 'confirmed',
-            type: 'tournament'
-          })
-        }).catch(err => console.warn('Sync tournament booking notice:', err));
-      }
+      await apiRegisterTournament(tournament?.id, user, {
+        teamName: formData.teamName,
+        captainName: formData.captainName,
+        totalAmount,
+        tournamentTitle: tournament?.title,
+        venue: tournament?.venue,
+        date: tournament?.date,
+        time: tournament?.time,
+        sport: tournament?.sport
+      });
     } catch (e) {
-      console.warn('Error saving tournament booking:', e);
+      console.warn('Error saving tournament registration:', e);
     }
 
     setTimeout(() => {
@@ -279,7 +133,7 @@ function TournamentRegistrationModal({ tournament, user, onClose, onSuccess }) {
       if (typeof onSuccess === 'function') {
         onSuccess(tournament?.id);
       }
-    }, 1200);
+    }, 1000);
   };
 
   return (
@@ -1072,44 +926,97 @@ function CreateTournamentForm({ onClose, onCreated }) {
 /* ─── Main Component ─────────────────────────────────── */
 export default function Tournaments({ role, user }) {
   const [activeFilter, setActiveFilter] = useState('All');
-  const [tournaments, setTournaments] = useState(() => {
-    try {
-      const savedRegs = JSON.parse(localStorage.getItem('turfington_registered_tournaments') || '[]');
-      return TOURNAMENTS.map(t => savedRegs.includes(t.id) ? { ...t, registered: true, filled: Math.min(t.slots, t.filled + 1) } : t);
-    } catch {
-      return TOURNAMENTS;
-    }
-  });
-  const [myTournaments, setMyTournaments] = useState(MY_TOURNAMENTS);
+  const [tournaments, setTournaments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [payModal, setPayModal] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [expandedOwnerTournament, setExpandedOwnerTournament] = useState(null);
 
+  const currentUserId = user?.uid || user?.id || user?.firebase_uid;
   const isOwner = role === 'owner';
+
+  const loadAllTournaments = useCallback(async () => {
+    try {
+      purgeLegacyTestTournaments();
+      const list = await apiFetchTournaments();
+      const sRegs = JSON.parse(localStorage.getItem('turfington_registered_tournaments') || '[]');
+      const formatted = list.map(t => {
+        const isUserRegistered = sRegs.includes(t.id) ||
+          (Array.isArray(t.registrations) && t.registrations.some(r => r.uid === currentUserId || r.userId === currentUserId));
+        return {
+          ...t,
+          registered: isUserRegistered,
+          image: t.banner || t.image || t.pfp || DEFAULT_SPORT_IMAGES[t.sport] || '/trophy.png'
+        };
+      });
+      setTournaments(formatted);
+    } catch (err) {
+      console.warn('Error loading tournaments:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    loadAllTournaments();
+
+    const handleCreated = () => { loadAllTournaments(); };
+    const handleUpdated = () => { loadAllTournaments(); };
+    const handleDeleted = () => { loadAllTournaments(); };
+
+    window.addEventListener('turfington_tournament_created', handleCreated);
+    window.addEventListener('turfington_tournament_updated', handleUpdated);
+    window.addEventListener('turfington_tournament_deleted', handleDeleted);
+
+    return () => {
+      window.removeEventListener('turfington_tournament_created', handleCreated);
+      window.removeEventListener('turfington_tournament_updated', handleUpdated);
+      window.removeEventListener('turfington_tournament_deleted', handleDeleted);
+    };
+  }, [loadAllTournaments]);
+
+  const myTournaments = useMemo(() => {
+    if (!currentUserId) return [];
+    return tournaments.filter(t => 
+      t.creator_id === currentUserId || 
+      t.creatorUid === currentUserId || 
+      t.owner_id === currentUserId ||
+      t.user_id === currentUserId
+    );
+  }, [tournaments, currentUserId]);
 
   const filtered = tournaments.filter(t =>
     activeFilter === 'All' || t.sport === activeFilter
   );
 
   const handleRegistered = (id) => {
-    setTournaments(prev => prev.map(t => t.id === id ? { ...t, registered: true, filled: t.filled + 1 } : t));
+    setTournaments(prev => prev.map(t => t.id === id ? { ...t, registered: true, filled: (t.filled || 0) + 1 } : t));
+    loadAllTournaments();
   };
 
-  const handleCreate = (form) => {
-    const newT = {
-      id: Date.now(),
-      title: form.title,
-      sport: form.sport,
-      image: `https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=800`,
-      prizePool: `₹${form.prizePool}`,
-      entryFee: `₹${form.entryFee}`,
-      date: form.date,
-      slots: parseInt(form.slots),
-      filled: 0,
-      status: 'Draft',
-      registrations: [],
-    };
-    setMyTournaments(prev => [newT, ...prev]);
+  const handleCreate = async (form) => {
+    if (!user || (!user.id && !user.uid && !user.firebase_uid)) {
+      alert('Please log in with an authenticated account to create a tournament.');
+      return;
+    }
+    try {
+      const newT = await apiCreateTournament(form, user);
+      setTournaments(prev => [newT, ...prev.filter(t => t.id !== newT.id)]);
+      loadAllTournaments();
+    } catch (err) {
+      console.error('Failed to create tournament:', err);
+      alert(err.message || 'Failed to create tournament.');
+    }
+  };
+
+  const handleDeleteTournament = async (tournamentId) => {
+    if (!confirm('Are you sure you want to delete this tournament?')) return;
+    try {
+      await apiDeleteTournament(tournamentId, currentUserId);
+      setTournaments(prev => prev.filter(t => t.id !== tournamentId));
+    } catch (err) {
+      console.error('Failed to delete tournament:', err);
+    }
   };
 
   return (
@@ -1186,7 +1093,11 @@ export default function Tournaments({ role, user }) {
                       <button className="p-2 rounded-full bg-white/5 border border-white/10 text-neutral-400 hover:text-violet-400 transition-colors">
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
-                      <button className="p-2 rounded-full bg-white/5 border border-white/10 text-neutral-400 hover:text-rose-400 transition-colors">
+                      <button 
+                        onClick={() => handleDeleteTournament(t.id)}
+                        className="p-2 rounded-full bg-white/5 border border-white/10 text-neutral-400 hover:text-rose-400 transition-colors cursor-pointer"
+                        title="Delete Tournament"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -1262,6 +1173,17 @@ export default function Tournaments({ role, user }) {
           </h2>
         </div>
 
+        {filtered.length === 0 ? (
+          <div className="glass-card p-12 text-center border border-dashed border-white/10 rounded-2xl">
+            <Trophy className="w-10 h-10 text-neutral-600 mx-auto mb-3" />
+            <h3 className="font-display font-bold text-white text-base">No active tournaments</h3>
+            <p className="text-xs text-neutral-400 mt-1 max-w-sm mx-auto">
+              {isOwner 
+                ? 'No tournaments published yet. Click "Create Tournament" above to host a competitive event.' 
+                : 'No tournaments have been published yet by verified organizers. Check back soon for upcoming competitions!'}
+            </p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
           {filtered.map((t, i) => {
             const sportMeta = SPORT_COLORS[t.sport] || { icon: '🏆', color: 'indigo' };
@@ -1376,6 +1298,7 @@ export default function Tournaments({ role, user }) {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* ── Modals ───────────────────────────────────── */}
