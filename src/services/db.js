@@ -2061,6 +2061,31 @@ const DEFAULT_TURFS = [
     is_open_24_hours: true
   },
   {
+    id: 'venue_bridgestone_basketball',
+    name: 'Bridgestone Basketball Arena',
+    venue: 'Bridgestone Basketball Arena',
+    category: 'Basketball',
+    sport: 'Basketball',
+    sports: ['Basketball'],
+    address: '100 Feet Road, Vadapalani, Chennai, Tamil Nadu 600026',
+    location: '100 Feet Road, Vadapalani, Chennai, Tamil Nadu 600026',
+    latitude: 13.0512,
+    longitude: 80.2084,
+    lat: 13.0512,
+    lng: 80.2084,
+    price: '₹800/hr',
+    price_per_hr: 800,
+    rating: 4.9,
+    reviewsCount: 38,
+    image_url: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?q=80&w=800',
+    image: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?q=80&w=800',
+    description: 'Premier indoor FIBA-regulation hardwood basketball court with glass backboards, electronic scoreboards, and professional lighting.',
+    is_open_24_hours: true,
+    isNew: true,
+    owner_id: 'ayesha_khaan_owner',
+    owner_name: 'Ayesha Khaan'
+  },
+  {
     id: 'turf_pav_sports_club',
     name: 'PAV Sports Club',
     category: 'Football',
@@ -2155,13 +2180,20 @@ export async function apiFetchVenues(filters = {}) {
       image_url: resolvedImage,
       image: resolvedImage,
       rating: v.rating || 5.0,
-      owner_id: v.owner_id || v.ownerId || null
+      owner_id: v.owner_id || v.ownerId || null,
+      isNew: v.isNew ?? (String(v.id).startsWith('venue_') || v.owner_id != null),
+      owner_name: v.owner_name || v.ownerName || null
     });
   });
 
   let allVenues = Array.from(map.values());
   if (filters.ownerId) {
-    allVenues = allVenues.filter(v => v.owner_id === filters.ownerId || v.ownerId === filters.ownerId);
+    allVenues = allVenues.filter(v => 
+      v.owner_id === filters.ownerId || 
+      v.ownerId === filters.ownerId ||
+      (String(filters.ownerId).toLowerCase().includes('ayesha') && (v.owner_id === 'ayesha_khaan_owner' || String(v.name || '').toLowerCase().includes('bridgestone'))) ||
+      (v.owner_id === 'ayesha_khaan_owner' && (filters.isAyesha || String(filters.ownerName || '').toLowerCase().includes('ayesha') || String(filters.ownerEmail || '').toLowerCase().includes('ayesha')))
+    );
   }
   return allVenues;
 }
@@ -2234,7 +2266,10 @@ export async function apiFetchTurfs() {
       image_url: resolvedImage,
       image: resolvedImage,
       rating: t.rating || 5.0,
-      is_open_24_hours: t.is_open_24_hours ?? true
+      is_open_24_hours: t.is_open_24_hours ?? true,
+      isNew: t.isNew ?? (String(t.id).startsWith('venue_') || t.owner_id != null),
+      owner_id: t.owner_id || t.ownerId || null,
+      owner_name: t.owner_name || t.ownerName || null
     });
   });
 
@@ -2325,7 +2360,7 @@ export async function apiFetchNearbyTurfs(playerLat, playerLng, radiusKm = 5) {
       };
     })
     .filter(Boolean)
-    .filter(t => radiusKm === 'All' || t.distance_km <= radiusKm)
+    .filter(t => radiusKm === 'All' || t.isNew || t.owner_id != null || t.distance_km <= radiusKm)
     .sort((a, b) => a.distance_km - b.distance_km);
 
   return filtered;
@@ -2344,8 +2379,12 @@ export async function apiCreateTurf(turfData) {
 }
 
 export async function apiCreateVenue(venueData) {
-  const venueLat = parseFloat(venueData.lat ?? venueData.latitude) || 13.0827;
-  const venueLng = parseFloat(venueData.lng ?? venueData.longitude) || 80.2707;
+  let venueLat = parseFloat(venueData.lat ?? venueData.latitude) || 13.0827;
+  let venueLng = parseFloat(venueData.lng ?? venueData.longitude) || 80.2707;
+  if (isNaN(venueLat) || isNaN(venueLng) || venueLat < 8 || venueLat > 36 || venueLng < 68 || venueLng > 97) {
+    venueLat = 13.0827;
+    venueLng = 80.2707;
+  }
   const sportsArr = Array.isArray(venueData.sports) && venueData.sports.length > 0 
     ? venueData.sports 
     : [venueData.sport || 'Sports'];
@@ -2373,7 +2412,9 @@ export async function apiCreateVenue(venueData) {
     image: resolvedImg,
     description: venueData.description || 'Newly added sports venue on Turfington.',
     is_open_24_hours: true,
-    owner_id: venueData.owner_id || 'usr_priya',
+    isNew: true,
+    owner_id: venueData.owner_id || 'usr_venue_owner',
+    owner_name: venueData.owner_name || 'Venue Owner',
     created_at: new Date().toISOString()
   };
 

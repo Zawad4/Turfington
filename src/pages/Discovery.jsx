@@ -60,7 +60,7 @@ export default function Discovery({
   const [selectedDealsVenue, setSelectedDealsVenue] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('Near You');
-  const [radiusKm, setRadiusKm] = useState(5); // Default 5 km radius
+  const [radiusKm, setRadiusKm] = useState('All'); // Default 'All' so all venues are immediately discoverable
   const [selectedMarker, setSelectedMarker] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -372,14 +372,24 @@ export default function Discovery({
     const unsubscribe = apiSubscribeVenues((turfs) => {
       // Map Firebase/API turfs to 'activities' shape expected by the UI
       const mapped = turfs.map(t => {
-        const tLat = parseFloat(t.latitude ?? t.lat) || 13.0827;
-        const tLng = parseFloat(t.longitude ?? t.lng) || 80.2707;
-        const isCustom = String(t.id).startsWith('venue_') || t.owner_id != null;
+        let tLat = parseFloat(t.latitude ?? t.lat);
+        let tLng = parseFloat(t.longitude ?? t.lng);
+        if (isNaN(tLat) || isNaN(tLng) || tLat < 8 || tLat > 36 || tLng < 68 || tLng > 97) {
+          tLat = 13.0827;
+          tLng = 80.2707;
+        }
+        const isCustom = String(t.id).startsWith('venue_') || t.owner_id != null || t.isNew === true;
+        const sportsList = Array.isArray(t.sports) && t.sports.length > 0 
+          ? t.sports 
+          : [t.category || t.sport || 'Sports'];
         return {
           id: t.id,
-          title: t.name,
-          sport: t.category || (t.sports && t.sports[0]) || t.sport || 'Sports',
-          venue: t.name,
+          title: t.name || t.venue || 'Sports Venue',
+          name: t.name || t.venue || 'Sports Venue',
+          sport: t.category || sportsList[0] || t.sport || 'Sports',
+          category: t.category || sportsList[0] || t.sport || 'Sports',
+          sports: sportsList,
+          venue: t.name || t.venue || 'Sports Venue',
           lat: tLat,
           lng: tLng,
           latitude: tLat,
@@ -507,9 +517,26 @@ export default function Discovery({
   ];
 
   const filteredActivities = combinedActivitiesList.filter(act => {
-    if (selectedSport !== 'All' && act.sport !== selectedSport) return false;
+    if (selectedSport !== 'All') {
+      const targetSport = selectedSport.toLowerCase();
+      const sMatch = (act.sport && act.sport.toLowerCase() === targetSport) ||
+                     (act.category && act.category.toLowerCase() === targetSport) ||
+                     (Array.isArray(act.sports) && act.sports.some(s => s && s.toLowerCase() === targetSport));
+      if (!sMatch) return false;
+    }
     if (selectedSkill !== 'All' && act.skill !== selectedSkill) return false;
-    if (searchQuery && !act.title.toLowerCase().includes(searchQuery.toLowerCase()) && !act.venue.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const titleMatch = (act.title && act.title.toLowerCase().includes(q)) ||
+                         (act.venue && act.venue.toLowerCase().includes(q)) ||
+                         (act.name && act.name.toLowerCase().includes(q));
+      const sportMatch = (act.sport && act.sport.toLowerCase().includes(q)) ||
+                         (act.category && act.category.toLowerCase().includes(q)) ||
+                         (Array.isArray(act.sports) && act.sports.some(s => s && s.toLowerCase() === q));
+      const addrMatch = (act.address && act.address.toLowerCase().includes(q)) ||
+                        (act.location && act.location.toLowerCase().includes(q));
+      if (!titleMatch && !sportMatch && !addrMatch) return false;
+    }
     return true;
   });
 
@@ -922,10 +949,14 @@ export default function Discovery({
                 >
                   <option value="All">All Sports</option>
                   <option value="Football">Football</option>
-                  <option value="Table Tennis">Table Tennis</option>
-                  <option value="Bowling">Bowling</option>
+                  <option value="Basketball">Basketball</option>
                   <option value="Badminton">Badminton</option>
                   <option value="Cricket">Cricket</option>
+                  <option value="Table Tennis">Table Tennis</option>
+                  <option value="Pickleball">Pickleball</option>
+                  <option value="Bowling">Bowling</option>
+                  <option value="Tennis">Tennis</option>
+                  <option value="Volleyball">Volleyball</option>
                 </select>
               </div>
 
@@ -1073,9 +1104,26 @@ export default function Discovery({
                       return { ...turf, distanceNum: distNum, distanceText: `${distNum} km away` };
                     })
                     .filter(turf => {
-                      if (selectedSport !== 'All' && turf.sport !== selectedSport) return false;
-                      if (searchQuery && !turf.title.toLowerCase().includes(searchQuery.toLowerCase()) && !turf.venue.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-                      if (radiusKm === 'All') return true;
+                      if (selectedSport !== 'All') {
+                        const targetSport = selectedSport.toLowerCase();
+                        const sMatch = (turf.sport && turf.sport.toLowerCase() === targetSport) ||
+                                       (turf.category && turf.category.toLowerCase() === targetSport) ||
+                                       (Array.isArray(turf.sports) && turf.sports.some(s => s && s.toLowerCase() === targetSport));
+                        if (!sMatch) return false;
+                      }
+                      if (searchQuery.trim()) {
+                        const q = searchQuery.toLowerCase().trim();
+                        const titleMatch = (turf.title && turf.title.toLowerCase().includes(q)) ||
+                                           (turf.venue && turf.venue.toLowerCase().includes(q)) ||
+                                           (turf.name && turf.name.toLowerCase().includes(q));
+                        const sportMatch = (turf.sport && turf.sport.toLowerCase().includes(q)) ||
+                                           (turf.category && turf.category.toLowerCase().includes(q)) ||
+                                           (Array.isArray(turf.sports) && turf.sports.some(s => s && s.toLowerCase() === q));
+                        const addrMatch = (turf.address && turf.address.toLowerCase().includes(q)) ||
+                                          (turf.location && turf.location.toLowerCase().includes(q));
+                        if (!titleMatch && !sportMatch && !addrMatch) return false;
+                      }
+                      if (radiusKm === 'All' || turf.isNew || turf.owner_id != null) return true;
                       return turf.distanceNum <= Number(radiusKm);
                     })
                     .sort((a, b) => {
@@ -1583,7 +1631,31 @@ export default function Discovery({
             {/* TABS CONTENT: Venues */}
             {activeTab === 'Venues' && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {activities.map(v => {
+                {activities
+                  .filter(v => {
+                    if (selectedSport !== 'All') {
+                      const targetSport = selectedSport.toLowerCase();
+                      const sMatch = (v.sport && v.sport.toLowerCase() === targetSport) ||
+                                     (v.category && v.category.toLowerCase() === targetSport) ||
+                                     (Array.isArray(v.sports) && v.sports.some(s => s && s.toLowerCase() === targetSport));
+                      if (!sMatch) return false;
+                    }
+                    if (searchQuery.trim()) {
+                      const q = searchQuery.toLowerCase().trim();
+                      const titleMatch = (v.title && v.title.toLowerCase().includes(q)) ||
+                                         (v.venue && v.venue.toLowerCase().includes(q)) ||
+                                         (v.name && v.name.toLowerCase().includes(q));
+                      const sportMatch = (v.sport && v.sport.toLowerCase().includes(q)) ||
+                                         (v.category && v.category.toLowerCase().includes(q)) ||
+                                         (Array.isArray(v.sports) && v.sports.some(s => s && s.toLowerCase() === q));
+                      const addrMatch = (v.address && v.address.toLowerCase().includes(q)) ||
+                                        (v.location && v.location.toLowerCase().includes(q));
+                      if (!titleMatch && !sportMatch && !addrMatch) return false;
+                    }
+                    return true;
+                  })
+                  .sort((a, b) => (a.isNew && !b.isNew ? -1 : !a.isNew && b.isNew ? 1 : 0))
+                  .map(v => {
                   const matches = venueOffers.filter(o => o.venueId === v.id);
                   const bookingOffers = matches.filter(o => o.type === 'booking');
                   const membershipPackages = matches.filter(o => o.type === 'membership');

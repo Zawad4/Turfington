@@ -797,8 +797,12 @@ app.post('/api/venues', (req, res) => {
   }
 
   const db = readDB();
-  const venueLat = parseFloat(lat ?? latitude) || (13.0827 + (Math.random() - 0.5) * 0.05);
-  const venueLng = parseFloat(lng ?? longitude) || (80.2707 + (Math.random() - 0.5) * 0.05);
+  let venueLat = parseFloat(lat ?? latitude) || (13.0827 + (Math.random() - 0.5) * 0.05);
+  let venueLng = parseFloat(lng ?? longitude) || (80.2707 + (Math.random() - 0.5) * 0.05);
+  if (isNaN(venueLat) || isNaN(venueLng) || venueLat < 8 || venueLat > 36 || venueLng < 68 || venueLng > 97) {
+    venueLat = 13.0827;
+    venueLng = 80.2707;
+  }
   const sportsArr = Array.isArray(sports) && sports.length > 0 ? sports : [sport || 'Football'];
 
   const newVenue = {
@@ -823,7 +827,8 @@ app.post('/api/venues', (req, res) => {
     image_url: image || image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800',
     description: description || 'Newly added sports venue on Turfington.',
     amenities: amenities || ['Floodlights', 'Parking'],
-    status: 'Open Now'
+    status: 'Open Now',
+    isNew: true
   };
 
   db.venues.unshift(newVenue);
