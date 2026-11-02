@@ -15,6 +15,7 @@ import { apiFetchTurfs, apiFetchNearbyTurfs, apiCreateBooking, apiUpdateBookingS
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import { useToast } from '../context';
 import { formatTime12Hour } from '../utils/formatters';
+import { fetchEnglishReverseGeocode, sanitizeLocationToEnglish } from '../utils/locationHelper';
 import { getLocalFollowing, toggleFollowUser } from '../services/followService';
 
 /* ── Sport Capacity Presets & Rules ──────────────────────── */
@@ -559,23 +560,12 @@ export default function Discovery({
         const { latitude, longitude } = position.coords;
         setUserCoordinates({ lat: latitude, lng: longitude });
         applyRealDistances(latitude, longitude);
-        // Reverse geocode with OpenStreetMap Nominatim (free, no key)
+        // Strict English reverse geocode via Nominatim
         try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&zoom=10`,
-            { headers: { Accept: 'application/json' } }
-          );
-          if (res.ok) {
-            const data = await res.json();
-            const city = data.address?.city
-              || data.address?.town
-              || data.address?.county
-              || data.address?.state_district
-              || 'Your Location';
-            setLocationCity(city);
-          }
+          const geo = await fetchEnglishReverseGeocode(latitude, longitude, 10);
+          setLocationCity(geo.city || 'Chennai');
         } catch {
-          setLocationCity('Your Location'); // fail gracefully
+          setLocationCity('Chennai'); // fail gracefully in English
         }
         setLocationStatus('granted');
       },
@@ -853,7 +843,7 @@ export default function Discovery({
             {locationStatus === 'detecting' && 'Detecting your location...'}
             {locationStatus === 'granted' && (
               <span className="text-emerald-400">
-                {locationCity && <strong>{locationCity}</strong>}
+                {locationCity && <strong>{sanitizeLocationToEnglish(locationCity)}</strong>}
                 {userCoordinates && ` (${userCoordinates.lat.toFixed(4)}, ${userCoordinates.lng.toFixed(4)})`}
                 {' · '}{activities.length} venues sorted by distance
               </span>
@@ -1329,7 +1319,7 @@ export default function Discovery({
 
                               <p className="text-xs text-neutral-400 flex items-center gap-1">
                                 <MapPin className="w-3.5 h-3.5 text-neutral-500 flex-shrink-0" />
-                                <span className="truncate">{turf.address || 'Chennai Central, Tamil Nadu'}</span>
+                                <span className="truncate">{sanitizeLocationToEnglish(turf.address || turf.location || 'Chennai, Tamil Nadu')}</span>
                               </p>
 
                               {turf.description && (
@@ -1691,7 +1681,7 @@ export default function Discovery({
                                 <MapPin className="w-3.5 h-3.5" />
                                 {player.distanceText || 'Nearby'}
                               </span>
-                              <span>{player.city || player.location || 'Chennai'}</span>
+                              <span>{sanitizeLocationToEnglish(player.city || player.location || 'Chennai')}</span>
                             </div>
                           </div>
 
@@ -2456,7 +2446,7 @@ export default function Discovery({
                     {selectedPlayerModal.distanceText || '1.2 km away'}
                   </span>
                   <span>•</span>
-                  <span>{selectedPlayerModal.city || selectedPlayerModal.location || 'Chennai'}</span>
+                  <span>{sanitizeLocationToEnglish(selectedPlayerModal.city || selectedPlayerModal.location || 'Chennai')}</span>
                 </div>
 
                 {selectedPlayerModal.bio && (

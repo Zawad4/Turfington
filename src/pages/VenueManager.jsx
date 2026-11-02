@@ -11,6 +11,7 @@ import { apiFetchVenues, apiCreateVenue, apiDeleteVenue, apiFetchBookings, apiUp
 import VenueImage from '../components/VenueImage';
 import { useToast } from '../context';
 import { formatTime12Hour } from '../utils/formatters';
+import { fetchEnglishReverseGeocode, fetchEnglishSearchGeocode, sanitizeLocationToEnglish } from '../utils/locationHelper';
 
 /* ─── Reject Booking Modal ────────────────────────────── */
 function RejectBookingModal({ booking, onClose, onReject }) {
@@ -208,14 +209,11 @@ function AddVenueModal({ onClose, onAdd }) {
     window._geocodeTimer = setTimeout(async () => {
       try {
         const cleanVal = addressValue.trim();
-        // Query biased with Chennai, Tamil Nadu, India context
+        // Search geocoding strictly in English
         const queryWithContext = `${cleanVal}, Chennai, Tamil Nadu, India`;
-        let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryWithContext)}&limit=1`);
-        let data = res.ok ? await res.json() : [];
-
+        let data = await fetchEnglishSearchGeocode(queryWithContext);
         if (!data || data.length === 0) {
-          res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cleanVal)}&limit=1`);
-          data = res.ok ? await res.json() : [];
+          data = await fetchEnglishSearchGeocode(cleanVal);
         }
 
         if (data && data.length > 0) {
@@ -264,16 +262,11 @@ function AddVenueModal({ onClose, onAdd }) {
 
         let address = `${lat}, ${lng}`;
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-          if (res.ok) {
-            const data = await res.json();
-            const addr = data.address || {};
-            const city = addr.city || addr.town || addr.suburb || addr.county || addr.state_district || 'Chennai';
-            const road = addr.road || addr.neighbourhood || '';
-            address = road ? `${road}, ${city}` : `${city}, Tamil Nadu`;
-          }
+          const geo = await fetchEnglishReverseGeocode(lat, lng, 14);
+          address = geo.fullAddress || `${geo.city}, Tamil Nadu`;
         } catch (e) {
           console.warn('Reverse geocode warning:', e);
+          address = 'Chennai, Tamil Nadu';
         }
 
         setForm(prev => ({
@@ -297,16 +290,11 @@ function AddVenueModal({ onClose, onAdd }) {
 
   const handleReverseGeocodePicked = async (lat, lng) => {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-      if (res.ok) {
-        const data = await res.json();
-        const addr = data.address || {};
-        const city = addr.city || addr.town || addr.suburb || addr.county || addr.state_district || 'Chennai';
-        const road = addr.road || addr.neighbourhood || '';
-        const full = road ? `${road}, ${city}` : `${city}, Tamil Nadu`;
-        setMapPickedAddress(full);
-      }
-    } catch {}
+      const geo = await fetchEnglishReverseGeocode(lat, lng, 14);
+      setMapPickedAddress(geo.fullAddress || `${geo.city}, Tamil Nadu`);
+    } catch {
+      setMapPickedAddress('Chennai, Tamil Nadu');
+    }
   };
 
   const handleSubmit = (e) => {
@@ -651,7 +639,7 @@ function AddVenueModal({ onClose, onAdd }) {
                       ...prev,
                       latitude: pickedCoords.lat.toString(),
                       longitude: pickedCoords.lng.toString(),
-                      location: mapPickedAddress || prev.location || 'Anna Nagar, Chennai'
+                      location: sanitizeLocationToEnglish(mapPickedAddress || prev.location || 'Anna Nagar, Chennai')
                     }));
                     setShowMapPicker(false);
                     setLocationFeedback(`✓ Map location set: ${pickedCoords.lat}°, ${pickedCoords.lng}°`);
@@ -1403,8 +1391,8 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
       name: newVenueData.name,
       sport: newVenueData.sports?.[0] || 'Football',
       sports: newVenueData.sports || [newVenueData.sports?.[0] || 'Football'],
-      address: newVenueData.location,
-      location: newVenueData.location,
+      address: sanitizeLocationToEnglish(newVenueData.location),
+      location: sanitizeLocationToEnglish(newVenueData.location),
       lat: newVenueData.latitude,
       lng: newVenueData.longitude,
       city: user?.city || 'Chennai',

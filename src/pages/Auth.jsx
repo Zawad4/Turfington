@@ -244,17 +244,15 @@ export default function Auth({ onLogin }) {
           const lng = pos.coords.longitude;
           let city = 'Chennai';
           try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-            if (res.ok) {
-              const d = await res.json();
-              city = d.address?.city || d.address?.town || d.address?.county || d.address?.state_district || 'Chennai';
-            }
+            const geo = await fetchEnglishReverseGeocode(lat, lng, 10);
+            city = geo.city || 'Chennai';
           } catch {}
+          const safeCity = sanitizeLocationToEnglish(city);
           apiUpdateProfile(profile.id || profile.firebase_uid, {
             lat,
             lng,
-            city,
-            location: `${city}, Tamil Nadu`
+            city: safeCity,
+            location: `${safeCity}, Tamil Nadu`
           });
         }, () => {}, { timeout: 8000 });
       }
