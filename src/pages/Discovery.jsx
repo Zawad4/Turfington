@@ -63,7 +63,7 @@ export default function Discovery({
   const [searchQuery, setSearchQuery] = useState('');
   const [nearYouSubTab, setNearYouSubTab] = useState('venues'); // 'venues' | 'join_games' | 'all'
   const [activeTab, setActiveTab] = useState('Near You');
-  const [radiusKm, setRadiusKm] = useState('All'); // Default 'All' so all venues are immediately discoverable
+  const [radiusKm, setRadiusKm] = useState(5); // Default 5 km radius; manual expansion by player
   const [selectedMarker, setSelectedMarker] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -1093,14 +1093,10 @@ export default function Discovery({
                                       (turf.location && turf.location.toLowerCase().includes(q));
                     if (!titleMatch && !sportMatch && !addrMatch) return false;
                   }
-                  if (radiusKm === 'All' || turf.isNew || turf.owner_id != null) return true;
+                  if (radiusKm === 'All' || String(radiusKm) === 'All') return true;
                   return turf.distanceNum <= Number(radiusKm);
                 })
-                .sort((a, b) => {
-                  if (a.isNew && !b.isNew) return -1;
-                  if (!a.isNew && b.isNew) return 1;
-                  return a.distanceNum - b.distanceNum;
-                });
+                .sort((a, b) => (a.distanceNum || 0) - (b.distanceNum || 0));
 
               return (
                 <div className="space-y-8">
@@ -1188,7 +1184,7 @@ export default function Discovery({
                               key={r}
                               onClick={() => setRadiusKm(r)}
                               className={`px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer flex-shrink-0 ${
-                                radiusKm === r
+                                (radiusKm === r || String(radiusKm) === String(r))
                                   ? 'bg-[#5842fe] text-white shadow-lg shadow-[#5842fe]/30'
                                   : 'text-neutral-400 hover:text-white'
                               }`}
@@ -1227,16 +1223,28 @@ export default function Discovery({
                       {nearbyList.length === 0 ? (
                         <div className="glass-card p-12 text-center border border-dashed border-white/10 space-y-3">
                           <MapPin className="w-10 h-10 text-neutral-600 mx-auto" />
-                          <h3 className="text-white font-bold text-base">No Turfs Found Within {radiusKm} km</h3>
+                          <h3 className="text-white font-bold text-base">No Turfs Found Within {radiusKm === 'All' ? 'This Filter' : `${radiusKm} km`}</h3>
                           <p className="text-neutral-500 text-xs max-w-md mx-auto">
                             There are no registered turfs in this immediate radius. Expand your radius filter to view more venues.
                           </p>
-                          <div className="flex justify-center space-x-2 pt-2">
+                          <div className="flex flex-wrap justify-center gap-2 pt-2">
+                            <button
+                              onClick={() => setRadiusKm(10)}
+                              className="px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full transition-all cursor-pointer"
+                            >
+                              Expand to 10 km
+                            </button>
                             <button
                               onClick={() => setRadiusKm(20)}
                               className="px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full transition-all cursor-pointer"
                             >
                               Expand to 20 km
+                            </button>
+                            <button
+                              onClick={() => setRadiusKm(50)}
+                              className="px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-full transition-all cursor-pointer"
+                            >
+                              Expand to 50 km
                             </button>
                             <button
                               onClick={() => setRadiusKm('All')}

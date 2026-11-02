@@ -2561,7 +2561,7 @@ export async function apiFetchNearbyTurfs(playerLat, playerLng, radiusKm = 5) {
       };
     })
     .filter(Boolean)
-    .filter(t => radiusKm === 'All' || t.isNew || t.owner_id != null || t.distance_km <= radiusKm)
+    .filter(t => radiusKm === 'All' || String(radiusKm) === 'All' || t.distance_km <= Number(radiusKm))
     .sort((a, b) => a.distance_km - b.distance_km);
 
   return filtered;
