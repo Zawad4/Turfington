@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
+    "mobile": "npm --prefix sports-mobile-shell start",
+    "mobile:clean": "cd sports-mobile-shell && npx expo start -c",
     "expo": "npm --prefix sports-mobile-shell start",
     "expo:android": "npm --prefix sports-mobile-shell run android",
     "expo:ios": "npm --prefix sports-mobile-shell run ios",

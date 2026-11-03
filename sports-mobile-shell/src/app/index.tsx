@@ -16,9 +16,9 @@ import { WebView } from 'react-native-webview';
 const AppWebView: any = WebView;
 
 // Dual URL support: Local Wi-Fi network and Cloud Live deployment (works on 5G/4G/Anywhere)
-const LOCAL_DEV_URL = 'http://192.168.1.4:5173';
-const CLOUD_LIVE_URL = 'https://pdd-draft-1.vercel.app';
-const DEFAULT_URL = LOCAL_DEV_URL;
+const LOCAL_DEV_URL = 'http://172.20.10.2:5173';
+const CLOUD_LIVE_URL = 'https://turfington.vercel.app';
+const DEFAULT_URL = CLOUD_LIVE_URL;
 
 export default function AppScreen() {
   const [currentUrl, setCurrentUrl] = useState(DEFAULT_URL);

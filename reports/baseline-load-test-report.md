@@ -1,7 +1,7 @@
 # Baseline Load Testing Benchmark Report
 
 **Target Environment:** http://localhost:5000  
-**Execution Date:** 31/10/2026, 1:01:37 am  
+**Execution Date:** 3/11/2026, 8:47:14 am  
 **Test Profile:** Normal Expected Concurrency Baseline  
 
 ---
@@ -11,11 +11,11 @@
 | Metric Parameter | Observed Value | Specification / SLA |
 | :--- | :---: | :--- |
 | **Virtual Users (VUs)** | **100 users** | 100 concurrent workers |
-| **Continuous Duration** | **60.01s** | 1 minute continuous run |
-| **Total Requests Dispatched** | **2,36,702 reqs** | Thousands of requests per minute |
-| **Throughput (RPS)** | **3944.24 req/sec** | Stable continuous API handling |
+| **Continuous Duration** | **30.02s** | 1 minute continuous run |
+| **Total Requests Dispatched** | **35,800 reqs** | Thousands of requests per minute |
+| **Throughput (RPS)** | **1192.34 req/sec** | Stable continuous API handling |
 | **Success / Pass Rate** | **100.00%** | ≥ 99.0% SLA target |
-| **Successful Requests** | **2,36,702** | HTTP 2xx / 3xx responses |
+| **Successful Requests** | **35,800** | HTTP 2xx / 3xx responses |
 | **Failed Requests** | **0** | HTTP 4xx / 5xx / timeouts |
 
 ---
@@ -23,18 +23,18 @@
 ## ⏱️ Response Time Breakdown
 
 ```
-Average : 13.59ms
-Min     : 6ms
-Max     : 98ms
-Median  : 12ms
-P95     : 22ms
-P99     : 29ms
+Average : 58.02ms
+Min     : 41ms
+Max     : 136ms
+Median  : 55ms
+P95     : 78ms
+P99     : 109ms
 ```
 
-- **Fastest Response (Min):** `6ms`
-- **Average Response Time:** `13.59ms`
-- **Slowest Response (Max):** `98ms`
-- **95% of Users Received Responses in:** `≤ 22ms`
+- **Fastest Response (Min):** `41ms`
+- **Average Response Time:** `58.02ms`
+- **Slowest Response (Max):** `136ms`
+- **95% of Users Received Responses in:** `≤ 78ms`
 
 ---
 
@@ -42,11 +42,11 @@ P99     : 29ms
 
 | Endpoint | Path | Total Requests | RPS | Avg Latency | Min | Max |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Health Check** | `/api/health` | 47,341 | 788.86 req/sec | 13.51ms | 7ms | 98ms |
-| **Venues Discovery** | `/api/venues` | 47,341 | 788.86 req/sec | 13.67ms | 7ms | 84ms |
-| **Community Feed Posts** | `/api/posts` | 47,340 | 788.84 req/sec | 13.66ms | 7ms | 83ms |
-| **Community Groups** | `/api/community-groups` | 47,341 | 788.86 req/sec | 13.59ms | 7ms | 83ms |
-| **Payment Gateway Config** | `/api/payments/config` | 47,339 | 788.83 req/sec | 13.54ms | 6ms | 83ms |
+| **Health Check** | `/api/health` | 7,160 | 238.47 req/sec | 58.02ms | 41ms | 136ms |
+| **Venues Discovery** | `/api/venues` | 7,160 | 238.47 req/sec | 58.01ms | 41ms | 136ms |
+| **Community Feed Posts** | `/api/posts` | 7,160 | 238.47 req/sec | 58.01ms | 41ms | 136ms |
+| **Community Groups** | `/api/community-groups` | 7,160 | 238.47 req/sec | 58.03ms | 41ms | 135ms |
+| **Payment Gateway Config** | `/api/payments/config` | 7,160 | 238.47 req/sec | 58.02ms | 41ms | 136ms |
 
 ---
 
@@ -54,22 +54,16 @@ P99     : 29ms
 
 | Time Window | Requests Processed | Observed RPS | Avg Latency |
 | :--- | :---: | :---: | :---: |
-| 0s - 5.0s | 16090 reqs | 3218 req/sec | 16.8 ms |
-| 5s - 10.0s | 18449 reqs | 3689.8 req/sec | 14.8 ms |
-| 10s - 15.0s | 18021 reqs | 3604.2 req/sec | 14.9 ms |
-| 15s - 20.0s | 20329 reqs | 4065.8 req/sec | 13.1 ms |
-| 20s - 25.0s | 20628 reqs | 4125.6 req/sec | 13.1 ms |
-| 25s - 30.0s | 20972 reqs | 4194.4 req/sec | 12.8 ms |
-| 30s - 35.0s | 19982 reqs | 3996.4 req/sec | 13.4 ms |
-| 35s - 40.0s | 20579 reqs | 4115.8 req/sec | 12.8 ms |
-| 40s - 45.0s | 20716 reqs | 4143.2 req/sec | 12.9 ms |
-| 45s - 50.0s | 20778 reqs | 4155.6 req/sec | 12.9 ms |
-| 50s - 55.0s | 20385 reqs | 4077 req/sec | 13.1 ms |
+| 0s - 5.0s | 6101 reqs | 1220.2 req/sec | 55.9 ms |
+| 5s - 10.0s | 6100 reqs | 1220 req/sec | 55.8 ms |
+| 10s - 15.0s | 6100 reqs | 1220 req/sec | 56.5 ms |
+| 15s - 20.0s | 5325 reqs | 1065 req/sec | 64.4 ms |
+| 20s - 25.1s | 5575 reqs | 1115 req/sec | 64 ms |
 
 ---
 
 ## 📌 Performance Engineering Verdict
 
-- **Throughput Capability:** The system demonstrated sustained handling of **3944.24 req/sec** under 100 concurrent virtual users.
-- **Latency Consistency:** 95% of all traffic completed in under **22ms**, meeting high-performance web application SLAs.
+- **Throughput Capability:** The system demonstrated sustained handling of **1192.34 req/sec** under 100 concurrent virtual users.
+- **Latency Consistency:** 95% of all traffic completed in under **78ms**, meeting high-performance web application SLAs.
 - **Artifacts:** Full multi-sheet breakdown generated in `excel/LoadTest_Report.xlsx`.

@@ -1,0 +1,22 @@
+{
+  "short_name": "Turfington",
+  "name": "Turfington - Sports Networking & Venues",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/favicon.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#080808",
+  "theme_color": "#080808",
+  "display": "standalone",
+  "orientation": "portrait"
+}
+
