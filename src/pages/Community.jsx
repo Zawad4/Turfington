@@ -321,15 +321,10 @@ export default function Community({ user, setTab }) {
       } catch {}
     });
 
-    // 3. Fetch athletes for direct messaging (strictly excluding venue owners)
+    // 3. Fetch athletes and contacts for direct messaging resolution
     apiFetchAthletes(currentUserId).then(data => {
       if (isMounted) {
-        const isOwner = (u) => {
-          const r = (u?.role || u?.userRole || u?.user_role || '').toLowerCase().trim();
-          const em = (u?.email || '').toLowerCase().trim();
-          return r === 'owner' || r === 'venue_owner' || r === 'turf_owner' || !!u?.is_owner || !!u?.venue_owner || em === 'owner123@gmail.cpm' || em === 'owner123@gmail.com' || em.startsWith('owner');
-        };
-        setAthletes((Array.isArray(data) ? data : []).filter(u => !isOwner(u)));
+        setAthletes(Array.isArray(data) ? data : []);
       }
     });
 
@@ -1132,15 +1127,28 @@ export default function Community({ user, setTab }) {
                       ? athletes.find(a => a.id === otherUid || a.uid === otherUid || a.firebase_uid === otherUid)
                       : null;
 
-                    const displayTitle = item.title && item.title !== 'Athlete'
-                      ? item.title
-                      : (item.name && item.name !== 'Athlete'
-                        ? item.name
-                        : (matchedAthlete?.full_name || matchedAthlete?.name || (item.lastMessage?.senderUid !== currentUserId ? item.lastMessage?.senderName : null) || 'Athlete'));
+                    let matchedConnected = null;
+                    try {
+                      const connRaw = localStorage.getItem('turfington_connected_accounts');
+                      if (connRaw) {
+                        const list = JSON.parse(connRaw);
+                        if (Array.isArray(list)) {
+                          matchedConnected = list.find(a => a.id === otherUid || a.uid === otherUid || a.firebase_uid === otherUid);
+                        }
+                      }
+                    } catch {}
 
-                    const displayAvatar = item.avatarUrl && !item.avatarUrl.includes('direct_')
+                    const otherMsgName = item.lastMessage?.senderUid !== currentUserId ? item.lastMessage?.senderName : null;
+
+                    const displayTitle = (item.title && item.title !== 'Athlete' && item.title !== 'athlete')
+                      ? item.title
+                      : (item.name && item.name !== 'Athlete' && item.name !== 'athlete'
+                        ? item.name
+                        : (matchedAthlete?.full_name || matchedAthlete?.name || matchedConnected?.full_name || matchedConnected?.name || otherMsgName || 'Athlete'));
+
+                    const displayAvatar = (item.avatarUrl && !item.avatarUrl.includes('direct_'))
                       ? item.avatarUrl
-                      : (item.avatar || matchedAthlete?.avatar || matchedAthlete?.avatar_url || '');
+                      : (item.avatar || matchedAthlete?.avatar || matchedAthlete?.avatar_url || matchedConnected?.avatar || matchedConnected?.avatar_url || '');
 
                     return (
                       <div

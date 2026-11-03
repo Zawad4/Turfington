@@ -94,7 +94,16 @@ export default function UserAvatar({ user, className = "w-10 h-10 text-sm", alt 
     && !rawAvatar.includes('dicebear.com')
     && !rawAvatar.includes('bottts');
 
-  const initial = (user?.full_name || user?.name || user?.email || user?.username || 'U').trim().charAt(0).toUpperCase() || 'U';
+  const nameCandidate = (
+    user?.full_name ||
+    user?.name ||
+    user?.displayName ||
+    user?.title ||
+    user?.email ||
+    user?.username ||
+    (user?.uid || user?.id ? 'Athlete' : 'U')
+  ).trim();
+  const initial = nameCandidate.charAt(0).toUpperCase() || 'A';
 
   // Dynamic gradient based on initial letter
   const gradients = [

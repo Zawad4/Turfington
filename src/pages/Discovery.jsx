@@ -465,6 +465,8 @@ export default function Discovery({
         const sportsList = Array.isArray(t.sports) && t.sports.length > 0 
           ? t.sports 
           : [t.category || t.sport || 'Sports'];
+        const isOpen24 = Boolean(t.is_open_24_hours === true && (t.operating_hours === '24 Hours' || !t.operating_hours));
+        const operatingHours = t.operating_hours || (t.opening_time && t.closing_time ? `${formatTime12Hour(t.opening_time)} - ${formatTime12Hour(t.closing_time)}` : (isOpen24 ? '24 Hours' : (t.time && t.time !== 'Flexible' ? t.time : '06:00 AM - 11:00 PM')));
         return {
           id: t.id,
           title: t.name || t.venue || 'Sports Venue',
@@ -477,7 +479,10 @@ export default function Discovery({
           lng: tLng,
           latitude: tLat,
           longitude: tLng,
-          time: t.is_open_24_hours ? '24 Hours' : 'Flexible',
+          time: operatingHours,
+          operating_hours: operatingHours,
+          opening_time: t.opening_time || '06:00',
+          closing_time: t.closing_time || '23:00',
           slots: 'Multiple slots',
           joined: 0,
           total: 10,
@@ -1655,7 +1660,7 @@ export default function Discovery({
                               </div>
                               <div className="flex items-center">
                                 <Clock className="w-3.5 h-3.5 mr-1.5 text-indigo-400" />
-                                <span>{formatTime12Hour(act.time)}</span>
+                                <span>{act.operating_hours || (act.isHosted ? formatTime12Hour(act.time) : (act.time || '06:00 AM - 11:00 PM'))}</span>
                               </div>
                               <div className="flex items-center">
                                 <Users className="w-3.5 h-3.5 mr-1.5 text-indigo-400" />

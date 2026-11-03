@@ -23,18 +23,39 @@ import { NAV_ITEMS } from './config/constants';
 // Services
 import { apiFetchBookings } from './services/db';
 
-// Lazy-Loaded Page Views
-const Landing = lazy(() => import('./pages/Landing'));
-const Home = lazy(() => import('./pages/Home'));
-const Discovery = lazy(() => import('./pages/Discovery'));
-const Marketplace = lazy(() => import('./pages/Marketplace'));
-const Profile = lazy(() => import('./pages/Profile'));
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const RoleSelect = lazy(() => import('./pages/RoleSelect'));
-const Tournaments = lazy(() => import('./pages/Tournaments'));
-const VenueManager = lazy(() => import('./pages/VenueManager'));
-const Auth = lazy(() => import('./pages/Auth'));
-const Community = lazy(() => import('./pages/Community'));
+// Robust lazy loader that automatically retries and handles Vite chunk 404s after new Vercel deployments
+function lazyWithRetry(componentImport) {
+  return lazy(async () => {
+    const pageHasAlreadyBeenForceRefreshed = JSON.parse(
+      window.sessionStorage.getItem('turfington_chunk_retried') || 'false'
+    );
+    try {
+      const component = await componentImport();
+      window.sessionStorage.setItem('turfington_chunk_retried', 'false');
+      return component;
+    } catch (error) {
+      if (!pageHasAlreadyBeenForceRefreshed) {
+        window.sessionStorage.setItem('turfington_chunk_retried', 'true');
+        window.location.reload();
+        return new Promise(() => {}); // Window is reloading
+      }
+      throw error;
+    }
+  });
+}
+
+// Lazy-Loaded Page Views with deployment recovery
+const Landing = lazyWithRetry(() => import('./pages/Landing'));
+const Home = lazyWithRetry(() => import('./pages/Home'));
+const Discovery = lazyWithRetry(() => import('./pages/Discovery'));
+const Marketplace = lazyWithRetry(() => import('./pages/Marketplace'));
+const Profile = lazyWithRetry(() => import('./pages/Profile'));
+const Dashboard = lazyWithRetry(() => import('./pages/Dashboard'));
+const RoleSelect = lazyWithRetry(() => import('./pages/RoleSelect'));
+const Tournaments = lazyWithRetry(() => import('./pages/Tournaments'));
+const VenueManager = lazyWithRetry(() => import('./pages/VenueManager'));
+const Auth = lazyWithRetry(() => import('./pages/Auth'));
+const Community = lazyWithRetry(() => import('./pages/Community'));
 
 /* ── Local Storage Helper ──────────────────────────────────── */
 const loadLocalState = (key, fallback) => {

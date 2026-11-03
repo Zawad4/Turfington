@@ -26,7 +26,8 @@ import {
   apiCreateMarketplaceItem, 
   apiUpdateMarketplaceItem, 
   apiDeleteMarketplaceItem,
-  getInterconnectedAccounts 
+  getInterconnectedAccounts,
+  compressDataUrlOrFile
 } from '../services/db';
 
 export default function Marketplace({ 
@@ -189,15 +190,12 @@ export default function Marketplace({
     }
   };
 
-  const handleImageUpload = (e, setImg, setPrev) => {
+  const handleImageUpload = async (e, setImg, setPrev) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImg(reader.result);
-        if (setPrev) setPrev(reader.result);
-      };
-      reader.readAsDataURL(file);
+      const compressed = await compressDataUrlOrFile(file, 800, 0.75);
+      setImg(compressed);
+      if (setPrev) setPrev(compressed);
     }
   };
 

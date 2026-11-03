@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send, Paperclip, Smile, Image as ImageIcon, Check, CheckCheck,
@@ -151,6 +151,8 @@ export default function ChatWindowEnhanced({
     if (Array.isArray(chat.participants)) return chat.participants.length;
     if (typeof chat.members === 'number') return chat.members;
     if (typeof chat.memberCount === 'number') return chat.memberCount;
+    if (typeof chat.members === 'string' && !isNaN(Number(chat.members))) return Number(chat.members);
+    if (typeof chat.members === 'string' && chat.members.length > 0) return 1;
     return 2;
   }, [chat.members, chat.participants, chat.memberCount]);
 
@@ -189,13 +191,15 @@ export default function ChatWindowEnhanced({
       });
     }
 
-    // 3. Add members from chat.members array
+    // 3. Add members from chat.members array or string
     const candidateUids = [];
     if (Array.isArray(chat.members)) {
       chat.members.forEach(m => {
         if (typeof m === 'string') candidateUids.push(m);
         else if (m?.uid || m?.id) candidateUids.push(m.uid || m.id);
       });
+    } else if (typeof chat.members === 'string' && chat.members.length > 0) {
+      candidateUids.push(chat.members);
     }
     if (Array.isArray(chat.participants)) {
       chat.participants.forEach(p => {
@@ -358,6 +362,22 @@ export default function ChatWindowEnhanced({
     };
   }, [conversationId, currentUserId]);
 
+  // Helper to determine if a message is sent by the current user
+  const isMsgFromSelf = useCallback((m) => {
+    if (!m) return false;
+    if (m.self || m.user === 'You') return true;
+    const s = String(m.senderUid || m.sender_id || m.senderId || '').trim().toLowerCase();
+    if (s) {
+      if (currentUserId && s === String(currentUserId).trim().toLowerCase()) return true;
+      if (currentUser?.uid && s === String(currentUser.uid).trim().toLowerCase()) return true;
+      if (currentUser?.id && s === String(currentUser.id).trim().toLowerCase()) return true;
+      if (currentUser?.email && s === String(currentUser.email).trim().toLowerCase()) return true;
+    }
+    const u = String(m.user || m.senderName || m.sender?.full_name || '').trim().toLowerCase();
+    if (u && currentUserName && u === String(currentUserName).trim().toLowerCase()) return true;
+    return false;
+  }, [currentUserId, currentUser, currentUserName]);
+
   // Bulletproof deduplication: eliminates duplicate messages from optimistic sends, remote Firestore snapshots, or server responses
   const dedupedMessages = useMemo(() => {
     const result = [];
@@ -370,21 +390,6 @@ export default function ChatWindowEnhanced({
       if (typeof t === 'number') return t;
       const parsed = new Date(t || 0).getTime();
       return isNaN(parsed) ? 0 : parsed;
-    };
-
-    const isMsgFromSelf = (m) => {
-      if (!m) return false;
-      if (m.self || m.user === 'You') return true;
-      const s = String(m.senderUid || m.sender_id || m.senderId || '').trim().toLowerCase();
-      if (s) {
-        if (currentUserId && s === String(currentUserId).trim().toLowerCase()) return true;
-        if (currentUser?.uid && s === String(currentUser.uid).trim().toLowerCase()) return true;
-        if (currentUser?.id && s === String(currentUser.id).trim().toLowerCase()) return true;
-        if (currentUser?.email && s === String(currentUser.email).trim().toLowerCase()) return true;
-      }
-      const u = String(m.user || m.senderName || m.sender?.full_name || '').trim().toLowerCase();
-      if (u && currentUserName && u === String(currentUserName).trim().toLowerCase()) return true;
-      return false;
     };
 
     messages.forEach(msg => {
@@ -427,7 +432,7 @@ export default function ChatWindowEnhanced({
     });
 
     return result;
-  }, [messages, currentUserId, currentUserName, currentUser]);
+  }, [messages, isMsgFromSelf]);
 
   // Auto scroll messages container to bottom (NEVER scroll the window)
   useEffect(() => {

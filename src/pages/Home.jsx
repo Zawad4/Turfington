@@ -89,6 +89,8 @@ export default function Home({
           const sportsList = Array.isArray(t.sports) && t.sports.length > 0 
             ? t.sports 
             : [t.category || t.sport || 'Sports'];
+          const isOpen24 = Boolean(t.is_open_24_hours === true && (t.operating_hours === '24 Hours' || !t.operating_hours));
+          const operatingHours = t.operating_hours || (t.opening_time && t.closing_time ? `${formatTime12Hour(t.opening_time)} - ${formatTime12Hour(t.closing_time)}` : (isOpen24 ? '24 Hours' : '06:00 AM - 11:00 PM'));
           return {
             id: t.id,
             name: t.name,
@@ -98,6 +100,8 @@ export default function Home({
             sports: sportsList,
             slots: 'Active slots open',
             price: t.price || (t.price_per_hr ? `₹${t.price_per_hr}/hr` : '₹1,000/hr'),
+            operating_hours: operatingHours,
+            time: operatingHours,
             isNew: isCustom
           };
         });
@@ -554,6 +558,9 @@ export default function Home({
                         <h3 className="font-bold font-display text-white text-base truncate">{v.name}</h3>
                         <p className="text-xs text-neutral-400 mt-1 flex items-center">
                           <MapPin className="w-3.5 h-3.5 mr-1 text-neutral-500" /> {v.distance}
+                        </p>
+                        <p className="text-xs text-indigo-400 font-medium mt-1 flex items-center">
+                          <Clock className="w-3.5 h-3.5 mr-1 text-indigo-400" /> {v.operating_hours || v.time || '06:00 AM - 11:00 PM'}
                         </p>
                         
                         <div className="flex flex-wrap gap-1.5 mt-3">

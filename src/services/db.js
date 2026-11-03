@@ -2505,7 +2505,12 @@ export async function apiCreateVenue(venueData) {
   const sportsArr = Array.isArray(venueData.sports) && venueData.sports.length > 0 
     ? venueData.sports 
     : [venueData.sport || 'Sports'];
-  const resolvedImg = venueData.image || venueData.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800';
+  let resolvedImg = venueData.image || venueData.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800';
+  if (resolvedImg && resolvedImg.startsWith('data:image') && resolvedImg.length > 250000) {
+    try {
+      resolvedImg = await compressDataUrlOrFile(resolvedImg, 1000, 0.78);
+    } catch {}
+  }
 
   const currentAuthUid = auth.currentUser?.uid || '';
   const ownerUid = venueData.owner_uid || currentAuthUid || '';
@@ -2514,6 +2519,9 @@ export async function apiCreateVenue(venueData) {
 
   const bookingMode = venueData.booking_mode || venueData.booking_type || (venueData.requires_approval ? 'request' : 'direct');
   const requiresApproval = venueData.requires_approval ?? (bookingMode === 'request');
+
+  const isOpen24 = Boolean(venueData.is_open_24_hours === true || venueData.operating_hours === '24 Hours');
+  const operatingHours = venueData.operating_hours || (venueData.opening_time && venueData.closing_time ? `${formatTime12Hour(venueData.opening_time)} - ${formatTime12Hour(venueData.closing_time)}` : (isOpen24 ? '24 Hours' : '06:00 AM - 11:00 PM'));
 
   const customVenue = {
     id: venueData.id || ('venue_' + Date.now()),
@@ -2539,7 +2547,11 @@ export async function apiCreateVenue(venueData) {
     booking_type: bookingMode,
     requires_approval: requiresApproval,
     description: venueData.description || 'Newly added sports venue on Turfington.',
-    is_open_24_hours: true,
+    operating_hours: operatingHours,
+    opening_time: venueData.opening_time || '06:00',
+    closing_time: venueData.closing_time || '23:00',
+    time: operatingHours,
+    is_open_24_hours: isOpen24,
     isNew: true,
     owner_id: ownerId,
     owner_uid: ownerUid,
@@ -2622,11 +2634,19 @@ export async function apiUpdateVenue(venueId, updatedData) {
   const sportsArr = Array.isArray(updatedData.sports) && updatedData.sports.length > 0 
     ? updatedData.sports 
     : [updatedData.sport || 'Sports'];
-  const resolvedImg = updatedData.image || updatedData.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800';
+  let resolvedImg = updatedData.image || updatedData.image_url || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=800';
+  if (resolvedImg && resolvedImg.startsWith('data:image') && resolvedImg.length > 250000) {
+    try {
+      resolvedImg = await compressDataUrlOrFile(resolvedImg, 1000, 0.78);
+    } catch {}
+  }
 
   const bookingMode = updatedData.booking_mode || updatedData.booking_type || (updatedData.requires_approval ? 'request' : 'direct');
   const requiresApproval = updatedData.requires_approval ?? (bookingMode === 'request');
   const pricePerHour = Number(updatedData.price_per_hr || updatedData.pricePerHour) || 1000;
+
+  const isOpen24 = Boolean(updatedData.is_open_24_hours === true || updatedData.operating_hours === '24 Hours');
+  const operatingHours = updatedData.operating_hours || (updatedData.opening_time && updatedData.closing_time ? `${formatTime12Hour(updatedData.opening_time)} - ${formatTime12Hour(updatedData.closing_time)}` : (isOpen24 ? '24 Hours' : '06:00 AM - 11:00 PM'));
 
   const patch = {
     ...updatedData,
@@ -2654,6 +2674,11 @@ export async function apiUpdateVenue(venueId, updatedData) {
     requires_approval: requiresApproval,
     description: updatedData.description || '',
     phone: updatedData.phone || '',
+    operating_hours: operatingHours,
+    opening_time: updatedData.opening_time || '06:00',
+    closing_time: updatedData.closing_time || '23:00',
+    time: operatingHours,
+    is_open_24_hours: isOpen24,
     updated_at: new Date().toISOString()
   };
 
@@ -3402,11 +3427,91 @@ export async function apiFetchMarketplaceItems() {
   return localItems;
 }
 
+/**
+ * Safely compress raw base64 data URLs or File objects using HTML5 Canvas
+ * Prevents Firestore 1MB document size limit rejections (reduces 10MB raw photos to ~50KB)
+ */
+export function compressDataUrlOrFile(fileOrDataUrl, maxDim = 800, quality = 0.75) {
+  return new Promise((resolve) => {
+    if (!fileOrDataUrl) return resolve('');
+    if (typeof fileOrDataUrl === 'string' && !fileOrDataUrl.startsWith('data:image')) {
+      return resolve(fileOrDataUrl);
+    }
+    if (typeof document === 'undefined') return resolve(fileOrDataUrl);
+
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressed);
+      } catch {
+        resolve(typeof fileOrDataUrl === 'string' ? fileOrDataUrl : '');
+      }
+    };
+    img.onerror = () => {
+      resolve(typeof fileOrDataUrl === 'string' ? fileOrDataUrl : '');
+    };
+
+    if (typeof fileOrDataUrl === 'string') {
+      img.src = fileOrDataUrl;
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => { img.src = e.target?.result; };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(fileOrDataUrl);
+    }
+  });
+}
+
 export function apiSubscribeMarketplaceItems(callback) {
   if (typeof callback !== 'function') return () => {};
 
   // 1. Initial cached/remote load
   apiFetchMarketplaceItems().then(items => callback(items));
+
+  // Auto-compress and sync any locally-listed gear to Firestore so phone can fetch them immediately!
+  try {
+    const localStr = localStorage.getItem('turfington_marketplace_items');
+    if (localStr) {
+      const localItems = JSON.parse(localStr);
+      if (Array.isArray(localItems) && localItems.length > 0) {
+        localItems.forEach(async (item) => {
+          if (item && item.id && !MOCK_MARKETPLACE_IDS.has(item.id)) {
+            let itemImg = item.image || item.image_url;
+            if (itemImg && itemImg.startsWith('data:image') && itemImg.length > 200000) {
+              itemImg = await compressDataUrlOrFile(itemImg, 800, 0.75);
+              item.image = itemImg;
+              item.image_url = itemImg;
+            }
+            await setDoc(doc(db, 'marketplace_items', item.id), {
+              ...item,
+              image: itemImg,
+              image_url: itemImg,
+              createdAt: serverTimestamp()
+            }, { merge: true }).catch(err => console.warn('Sync local item to firestore notice:', err));
+          }
+        });
+      }
+    }
+  } catch {}
 
   // 2. Window event listener
   const handleUpdate = () => {
@@ -3421,10 +3526,23 @@ export function apiSubscribeMarketplaceItems(callback) {
       const dbItems = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(item => item && item.id && !MOCK_MARKETPLACE_IDS.has(item.id));
+      
+      // Merge with any freshly added local items so they aren't lost during async sync
+      let mergedItems = dbItems;
       try {
-        localStorage.setItem('turfington_marketplace_items', JSON.stringify(dbItems));
+        const localStr = localStorage.getItem('turfington_marketplace_items');
+        if (localStr) {
+          const localParsed = JSON.parse(localStr);
+          if (Array.isArray(localParsed)) {
+            const map = new Map();
+            localParsed.forEach(it => { if (it && it.id) map.set(it.id, it); });
+            dbItems.forEach(it => { if (it && it.id) map.set(it.id, it); });
+            mergedItems = Array.from(map.values());
+          }
+        }
+        localStorage.setItem('turfington_marketplace_items', JSON.stringify(mergedItems));
       } catch {}
-      callback(dbItems);
+      callback(mergedItems);
     }, (err) => {
       console.warn('marketplace onSnapshot warning:', err);
     });
@@ -3438,6 +3556,13 @@ export function apiSubscribeMarketplaceItems(callback) {
 
 export async function apiCreateMarketplaceItem(itemData) {
   const currentUid = auth.currentUser?.uid || itemData.seller_id || itemData.sellerId || 'usr_' + Date.now();
+  let img = itemData.image_url || itemData.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400';
+  if (img && img.startsWith('data:image') && img.length > 200000) {
+    try {
+      img = await compressDataUrlOrFile(img, 800, 0.75);
+    } catch {}
+  }
+
   const newItem = {
     id: itemData.id || ('mp_' + Date.now()),
     name: itemData.name || 'Sports Equipment',
@@ -3446,8 +3571,8 @@ export async function apiCreateMarketplaceItem(itemData) {
     condition: itemData.condition || 'New (Sealed Pack)',
     tag: itemData.condition || 'New (Sealed Pack)',
     description: itemData.description || '',
-    image: itemData.image_url || itemData.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400',
-    image_url: itemData.image_url || itemData.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400',
+    image: img,
+    image_url: img,
     seller_id: itemData.seller_id || currentUid,
     sellerId: itemData.seller_id || currentUid,
     seller_uid: itemData.seller_id || currentUid,
@@ -3478,6 +3603,8 @@ export async function apiCreateMarketplaceItem(itemData) {
     await setDoc(doc(db, 'marketplace_items', newItem.id), {
       ...itemData,
       ...newItem,
+      image: img,
+      image_url: img,
       createdAt: serverTimestamp()
     }, { merge: true });
   } catch (firestoreErr) {
@@ -3499,6 +3626,15 @@ export async function apiCreateMarketplaceItem(itemData) {
 }
 
 export async function apiUpdateMarketplaceItem(itemId, updatedData) {
+  let patch = { ...updatedData };
+  if (patch.image && patch.image.startsWith('data:image') && patch.image.length > 200000) {
+    try {
+      const comp = await compressDataUrlOrFile(patch.image, 800, 0.75);
+      patch.image = comp;
+      patch.image_url = comp;
+    } catch {}
+  }
+
   try {
     const existingStr = localStorage.getItem('turfington_marketplace_items');
     let existing = [];
@@ -3508,14 +3644,14 @@ export async function apiUpdateMarketplaceItem(itemId, updatedData) {
     } else {
       existing = [];
     }
-    const updated = existing.map(item => item && item.id === itemId ? { ...item, ...updatedData } : item);
+    const updated = existing.map(item => item && item.id === itemId ? { ...item, ...patch } : item);
     localStorage.setItem('turfington_marketplace_items', JSON.stringify(updated));
   } catch (err) {
     console.warn('localStorage update warning:', err);
   }
 
   try {
-    await setDoc(doc(db, 'marketplace_items', itemId), updatedData, { merge: true });
+    await setDoc(doc(db, 'marketplace_items', itemId), patch, { merge: true });
   } catch {}
 
   if (typeof window !== 'undefined') {

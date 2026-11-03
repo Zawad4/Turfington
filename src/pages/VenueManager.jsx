@@ -17,7 +17,8 @@ import {
   apiUpdateBookingStatus, 
   apiFetchOwnerBookings, 
   apiUpdateVenueBookingMode, 
-  apiCreateDirectChat 
+  apiCreateDirectChat,
+  compressDataUrlOrFile
 } from '../services/db';
 import VenueImage from '../components/VenueImage';
 import UserAvatar from '../components/UserAvatar';
@@ -179,7 +180,11 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
     description: venue?.description || '',
     image: venue?.image || venue?.image_url || '',
     fitMode: venue?.fitMode || 'cover',
-    booking_mode: venue?.booking_mode || (venue?.requires_approval ? 'request' : 'direct')
+    booking_mode: venue?.booking_mode || (venue?.requires_approval ? 'request' : 'direct'),
+    opening_time: venue?.opening_time || '06:00',
+    closing_time: venue?.closing_time || '23:00',
+    operating_hours: venue?.operating_hours || venue?.time || '06:00 AM - 11:00 PM',
+    is_open_24_hours: Boolean(venue?.is_open_24_hours && (venue?.operating_hours === '24 Hours' || venue?.time === '24 Hours'))
   });
   const [sportInput, setSportInput] = useState('');
   const [isDetectingGps, setIsDetectingGps] = useState(false);
@@ -189,17 +194,22 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
   const [mapPickedAddress, setMapPickedAddress] = useState('');
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
 
-  const handleLocalFileUpload = (e) => {
+  const handleLocalFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result;
-      if (dataUrl) {
-        setForm(f => ({ ...f, image: dataUrl }));
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressDataUrlOrFile(file, 1000, 0.75);
+      setForm(f => ({ ...f, image: compressed }));
+    } catch {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result;
+        if (dataUrl) {
+          setForm(f => ({ ...f, image: dataUrl }));
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const { isLoaded } = useJsApiLoader({
@@ -338,6 +348,8 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
       finalLng = 80.2707;
     }
 
+    const resolvedOperatingHours = form.operating_hours || (form.is_open_24_hours ? '24 Hours' : (form.opening_time && form.closing_time ? `${formatTime12Hour(form.opening_time)} - ${formatTime12Hour(form.closing_time)}` : '06:00 AM - 11:00 PM'));
+
     const newVenue = {
       ...(venue || {}),
       id: venue?.id || Date.now(),
@@ -357,6 +369,11 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
       revenue: venue?.revenue || { week: 0, month: 0 },
       slots: venue?.slots || generateSlots(),
       active: venue ? venue.active : true,
+      operating_hours: resolvedOperatingHours,
+      time: resolvedOperatingHours,
+      opening_time: form.opening_time || '06:00',
+      closing_time: form.closing_time || '23:00',
+      is_open_24_hours: Boolean(form.is_open_24_hours)
     };
     onAdd(newVenue);
     onClose();
@@ -534,6 +551,83 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
             <label className={labelClass}>Contact Phone</label>
             <input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})}
               placeholder="+91 98765 43210" className={inputClass} />
+          </div>
+
+          {/* Operating Hours & Timing */}
+          <div className="space-y-3 p-4 bg-[#131722] border border-white/10 rounded-2xl">
+            <div className="flex items-center justify-between">
+              <label className={labelClass}>Operating Hours & Timings</label>
+              <span className="text-[10px] text-indigo-400 font-extrabold flex items-center gap-1">
+                <Clock className="w-3 h-3 text-indigo-400" />
+                {form.operating_hours || '06:00 AM - 11:00 PM'}
+              </span>
+            </div>
+
+            {/* Presets */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: '06:00 AM - 11:00 PM', open: '06:00', close: '23:00', is24: false },
+                { label: '05:00 AM - 12:00 AM', open: '05:00', close: '00:00', is24: false },
+                { label: '07:00 AM - 10:00 PM', open: '07:00', close: '22:00', is24: false },
+                { label: '24 Hours Open', open: '00:00', close: '23:59', is24: true }
+              ].map(preset => {
+                const isSelected = form.operating_hours === preset.label || (preset.is24 && form.is_open_24_hours);
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      setForm(f => ({
+                        ...f,
+                        operating_hours: preset.label,
+                        opening_time: preset.open,
+                        closing_time: preset.close,
+                        is_open_24_hours: preset.is24
+                      }));
+                    }}
+                    className={`text-[10px] font-bold px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30'
+                        : 'bg-white/5 border-white/10 text-neutral-400 hover:text-white hover:border-white/20'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Custom opening / closing time picker */}
+            {!form.is_open_24_hours && (
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
+                <div>
+                  <span className="text-[10px] text-neutral-400 font-medium block mb-1">Opens At</span>
+                  <input
+                    type="time"
+                    value={form.opening_time || '06:00'}
+                    onChange={(e) => {
+                      const newOpen = e.target.value;
+                      const formatted = `${formatTime12Hour(newOpen)} - ${formatTime12Hour(form.closing_time || '23:00')}`;
+                      setForm(f => ({ ...f, opening_time: newOpen, operating_hours: formatted, is_open_24_hours: false }));
+                    }}
+                    className="w-full bg-[#0e121d] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-neutral-400 font-medium block mb-1">Closes At</span>
+                  <input
+                    type="time"
+                    value={form.closing_time || '23:00'}
+                    onChange={(e) => {
+                      const newClose = e.target.value;
+                      const formatted = `${formatTime12Hour(form.opening_time || '06:00')} - ${formatTime12Hour(newClose)}`;
+                      setForm(f => ({ ...f, closing_time: newClose, operating_hours: formatted, is_open_24_hours: false }));
+                    }}
+                    className="w-full bg-[#0e121d] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Venue Image Upload & Alignment controls */}
@@ -1470,6 +1564,12 @@ function VenueCard({ venue, onToggleActive, onToggleBookingMode, onUpdateSlot, o
               <p className="text-neutral-500 text-[10px] uppercase font-bold">Price/Hr</p>
               <p className="text-white font-bold mt-0.5 flex items-center">
                 <IndianRupee className="w-3 h-3 mr-0.5" />{venue.pricePerHour.toLocaleString('en-IN')}
+              </p>
+            </div>
+            <div>
+              <p className="text-neutral-500 text-[10px] uppercase font-bold">Operating Hours</p>
+              <p className="text-indigo-400 font-bold mt-0.5 flex items-center">
+                <Clock className="w-3 h-3 mr-0.5" />{venue.operating_hours || venue.time || '06:00 AM - 11:00 PM'}
               </p>
             </div>
             <div>

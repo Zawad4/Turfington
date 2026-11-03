@@ -29,19 +29,13 @@ export default class ErrorBoundary extends React.Component {
   }
 
   handleReset = () => {
-    this.setState({ hasError: false, error: null });
     try {
       if ('caches' in window) {
         caches.keys().then(names => names.forEach(name => caches.delete(name)));
       }
     } catch (_) {}
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.set('_r', Date.now().toString());
-      window.location.href = url.toString();
-    } catch (_) {
-      window.location.reload();
-    }
+    // Force a complete browser reload to ensure stale in-memory modules and cached chunks are cleared
+    window.location.reload();
   };
 
   render() {
