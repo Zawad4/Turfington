@@ -96,40 +96,37 @@ export default function Marketplace({
     : safeProductsList.filter(p => p && p.category === selectedCategory);
 
     const isItemOwner = (p) => {
-    if (!p) return false;
-    if (p.isMine === true) return true;
-    if (!user) return false;
+    if (!p || !user) return false;
 
-    const currentUserId = user?.id || user?.uid || user?.firebase_uid;
-    const currentUserName = user?.full_name || user?.name || user?.username;
-    const currentUserEmail = (user?.email || '').toLowerCase().trim();
-    const itemSellerEmail = (p.sellerEmail || p.seller_email || '').toLowerCase().trim();
+    const currentUserId = String(user?.id || user?.uid || user?.firebase_uid || '').trim().toLowerCase();
+    const currentUserEmail = String(user?.email || '').trim().toLowerCase();
+    const currentUserName = String(user?.full_name || user?.name || user?.username || '').trim().toLowerCase();
 
-    if (currentUserId && (p.seller_id === currentUserId || p.userId === currentUserId || p.sellerId === currentUserId || p.seller_uid === currentUserId)) {
+    const itemSellerId = String(p.seller_id || p.sellerId || p.seller_uid || p.userId || '').trim().toLowerCase();
+    const itemSellerEmail = String(p.sellerEmail || p.seller_email || '').trim().toLowerCase();
+    const itemSellerName = String(p.sellerName || p.seller_name || '').trim().toLowerCase();
+
+    // 1. Strict UID match (ignore generic demo IDs like 'usr_me')
+    if (currentUserId && itemSellerId && itemSellerId !== 'usr_me' && currentUserId === itemSellerId) {
       return true;
     }
-    if (currentUserName && (p.sellerName === currentUserName || p.sellerName === 'You')) {
-      return true;
-    }
+
+    // 2. Exact email match
     if (currentUserEmail && itemSellerEmail && currentUserEmail === itemSellerEmail) {
       return true;
     }
 
-    try {
-      const connected = (typeof getInterconnectedAccounts === 'function') ? getInterconnectedAccounts() : [];
-      if (Array.isArray(connected) && connected.length > 0) {
-        return connected.some(acc => {
-          const accId = acc.id || acc.uid || acc.firebase_uid;
-          const accName = acc.full_name || acc.name;
-          const accEmail = (acc.email || '').toLowerCase().trim();
-          return (
-            (accId && (p.seller_id === accId || p.userId === accId || p.sellerId === accId || p.seller_uid === accId)) ||
-            (accName && p.sellerName === accName) ||
-            (accEmail && itemSellerEmail && accEmail === itemSellerEmail)
-          );
-        });
-      }
-    } catch {}
+    // 3. Exact non-generic display name match (excluding generic terms)
+    const genericNames = ['you', 'athlete', 'member', 'seller', 'user', 'unknown', 'gear seller', 'community member', 'community athlete'];
+    if (
+      currentUserName && 
+      itemSellerName && 
+      !genericNames.includes(currentUserName) && 
+      !genericNames.includes(itemSellerName) && 
+      currentUserName === itemSellerName
+    ) {
+      return true;
+    }
 
     return false;
   };
@@ -153,7 +150,27 @@ export default function Marketplace({
     }
 
     const sellerNameStr = typeof p.sellerName === 'string' && p.sellerName.trim() ? p.sellerName : 'Gear Seller';
-    const sellerId = p.seller_id || p.sellerId || p.seller_uid || p.sellerUid || 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
+    let sellerId = p.seller_id || p.sellerId || p.seller_uid || p.sellerUid || p.userId;
+    
+    // Fallback: look up real seller UID from interconnected accounts if missing or generic
+    if (!sellerId || sellerId === 'usr_me') {
+      try {
+        const connected = (typeof getInterconnectedAccounts === 'function') ? getInterconnectedAccounts() : [];
+        const itemEmail = (p.sellerEmail || p.seller_email || '').toLowerCase().trim();
+        const match = connected.find(acc => 
+          (itemEmail && (acc.email || '').toLowerCase().trim() === itemEmail) ||
+          (acc.full_name && acc.full_name.trim().toLowerCase() === sellerNameStr.toLowerCase()) ||
+          (acc.name && acc.name.trim().toLowerCase() === sellerNameStr.toLowerCase())
+        );
+        if (match && (match.id || match.uid || match.firebase_uid)) {
+          sellerId = match.id || match.uid || match.firebase_uid;
+        }
+      } catch {}
+    }
+    if (!sellerId || sellerId === 'usr_me') {
+      sellerId = 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
+    }
+
     const priceStr = p.price != null ? `₹${p.price}` : '';
     const initialMsg = `Hi ${sellerNameStr}! I am interested in buying this product: ${p.name || p.title || 'Sports Gear'}${priceStr ? ` (${priceStr})` : ''}. Is this still available?`;
 
@@ -222,6 +239,11 @@ export default function Marketplace({
 
     const finalImage = itemImage || presetImage;
 
+    const activeUid = user?.id || user?.uid || user?.firebase_uid || '';
+    const activeEmail = user?.email || '';
+    const activeName = user?.full_name || user?.name || user?.username || 'Seller';
+    const activeAvatar = user?.avatar_url || user?.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(activeName)}`;
+
     const newListing = {
       name: itemName,
       category: itemCategory,
@@ -230,20 +252,21 @@ export default function Marketplace({
       price: parseFloat(itemPrice),
       condition: itemCondition,
       description: itemDesc,
-      seller_id: user?.id || user?.uid || user?.firebase_uid || 'usr_me',
-      sellerId: user?.id || user?.uid || user?.firebase_uid || 'usr_me',
-      seller_uid: user?.id || user?.uid || user?.firebase_uid || 'usr_me',
-      sellerEmail: user?.email || '',
-      seller_email: user?.email || '',
-      sellerName: user?.full_name || user?.name || user?.username || 'You',
-      sellerAvatar: user?.avatar_url || user?.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(user?.full_name || user?.name || 'Athlete')}`,
-      isMine: true
+      seller_id: activeUid,
+      sellerId: activeUid,
+      seller_uid: activeUid,
+      userId: activeUid,
+      sellerEmail: activeEmail,
+      seller_email: activeEmail,
+      sellerName: activeName,
+      sellerAvatar: activeAvatar,
+      createdAt: new Date().toISOString()
     };
 
     setListSuccess(true);
     const res = await apiCreateMarketplaceItem(newListing);
     if (res.success && res.item) {
-      setProductsList(prev => [{ ...res.item, isMine: true }, ...prev]);
+      setProductsList(prev => [res.item, ...prev]);
       setTimeout(() => {
         setListSuccess(false);
         setItemName('');

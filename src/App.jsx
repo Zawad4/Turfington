@@ -21,7 +21,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { NAV_ITEMS } from './config/constants';
 
 // Services
-import { apiFetchBookings } from './services/db';
+import { apiFetchBookings, getInterconnectedAccounts } from './services/db';
 
 // Robust lazy loader that automatically retries and handles Vite chunk 404s after new Vercel deployments
 function lazyWithRetry(componentImport) {
@@ -515,7 +515,24 @@ export default function App() {
                 onContactSeller={(item) => {
                   if (!item) return;
                   const sellerNameStr = typeof item.sellerName === 'string' && item.sellerName.trim() ? item.sellerName : 'Gear Seller';
-                  const sellerId = item.seller_id || item.sellerId || item.seller_uid || item.sellerUid || 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
+                  let sellerId = item.seller_id || item.sellerId || item.seller_uid || item.sellerUid || item.userId;
+                  if (!sellerId || sellerId === 'usr_me') {
+                    try {
+                      const connected = (typeof getInterconnectedAccounts === 'function') ? getInterconnectedAccounts() : [];
+                      const itemEmail = (item.sellerEmail || item.seller_email || '').toLowerCase().trim();
+                      const match = connected.find(acc => 
+                        (itemEmail && (acc.email || '').toLowerCase().trim() === itemEmail) ||
+                        (acc.full_name && acc.full_name.trim().toLowerCase() === sellerNameStr.toLowerCase()) ||
+                        (acc.name && acc.name.trim().toLowerCase() === sellerNameStr.toLowerCase())
+                      );
+                      if (match && (match.id || match.uid || match.firebase_uid)) {
+                        sellerId = match.id || match.uid || match.firebase_uid;
+                      }
+                    } catch {}
+                  }
+                  if (!sellerId || sellerId === 'usr_me') {
+                    sellerId = 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
+                  }
                   const priceStr = item.price != null ? `₹${item.price}` : '';
                   const initialMsg = `Hi ${sellerNameStr}! I am interested in buying this product: ${item.name || item.title || 'Sports Gear'}${priceStr ? ` (${priceStr})` : ''}. Is this still available?`;
 

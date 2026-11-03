@@ -31,6 +31,22 @@ import { formatTime12Hour } from '../utils/formatters';
 
 const REACTION_EMOJIS = ['❤️', '👍', '😂', '🔥', '⚽'];
 
+// Top-level module helper: determines if a message is from the active user
+export function checkIsMsgFromSelf(m, currentUserId, currentUser, currentUserName) {
+  if (!m) return false;
+  if (m.self || m.user === 'You') return true;
+  const s = String(m.senderUid || m.sender_id || m.senderId || '').trim().toLowerCase();
+  if (s) {
+    if (currentUserId && s === String(currentUserId).trim().toLowerCase()) return true;
+    if (currentUser?.uid && s === String(currentUser.uid).trim().toLowerCase()) return true;
+    if (currentUser?.id && s === String(currentUser.id).trim().toLowerCase()) return true;
+    if (currentUser?.email && s === String(currentUser.email).trim().toLowerCase()) return true;
+  }
+  const u = String(m.user || m.senderName || m.sender?.full_name || '').trim().toLowerCase();
+  if (u && currentUserName && u === String(currentUserName).trim().toLowerCase()) return true;
+  return false;
+}
+
 export default function ChatWindowEnhanced({
   chat,
   onBack,
@@ -364,18 +380,7 @@ export default function ChatWindowEnhanced({
 
   // Helper to determine if a message is sent by the current user
   const isMsgFromSelf = useCallback((m) => {
-    if (!m) return false;
-    if (m.self || m.user === 'You') return true;
-    const s = String(m.senderUid || m.sender_id || m.senderId || '').trim().toLowerCase();
-    if (s) {
-      if (currentUserId && s === String(currentUserId).trim().toLowerCase()) return true;
-      if (currentUser?.uid && s === String(currentUser.uid).trim().toLowerCase()) return true;
-      if (currentUser?.id && s === String(currentUser.id).trim().toLowerCase()) return true;
-      if (currentUser?.email && s === String(currentUser.email).trim().toLowerCase()) return true;
-    }
-    const u = String(m.user || m.senderName || m.sender?.full_name || '').trim().toLowerCase();
-    if (u && currentUserName && u === String(currentUserName).trim().toLowerCase()) return true;
-    return false;
+    return checkIsMsgFromSelf(m, currentUserId, currentUser, currentUserName);
   }, [currentUserId, currentUser, currentUserName]);
 
   // Bulletproof deduplication: eliminates duplicate messages from optimistic sends, remote Firestore snapshots, or server responses
@@ -397,7 +402,7 @@ export default function ChatWindowEnhanced({
       const id = msg.id || msg.idempotency_key || msg.idempotencyKey;
       if (id && seenIds.has(id)) return;
 
-      const self = isMsgFromSelf(msg);
+      const self = checkIsMsgFromSelf(msg, currentUserId, currentUser, currentUserName);
       const sender = String(msg.senderUid || msg.sender_id || msg.senderId || msg.user || '').trim().toLowerCase();
       const text = (msg.text || msg.content || '').trim();
       const time = parseTime(msg);
@@ -407,7 +412,7 @@ export default function ChatWindowEnhanced({
         const prevId = prev.id || prev.idempotency_key || prev.idempotencyKey;
         if (id && prevId && id === prevId) return true;
 
-        const prevSelf = isMsgFromSelf(prev);
+        const prevSelf = checkIsMsgFromSelf(prev, currentUserId, currentUser, currentUserName);
         const prevSender = String(prev.senderUid || prev.sender_id || prev.senderId || prev.user || '').trim().toLowerCase();
         const prevText = (prev.text || prev.content || '').trim();
         const prevTime = parseTime(prev);
@@ -904,7 +909,7 @@ export default function ChatWindowEnhanced({
             </div>
 
             {dedupedMessages.map((msg) => {
-              const isSelf = isMsgFromSelf(msg);
+              const isSelf = checkIsMsgFromSelf(msg, currentUserId, currentUser, currentUserName);
               const isDeleted = Boolean(msg.isDeleted || msg.deleted_at);
               const parentMsg = (msg.replyToId ? dedupedMessages.find(m => m.id === msg.replyToId) : null) || (msg.reply_to_id ? dedupedMessages.find(m => m.id === msg.reply_to_id) : null);
               const senderAvatar = msg.senderAvatar || msg.sender?.avatar_url || msg.avatar || '';

@@ -290,7 +290,12 @@ export default function Community({ user, setTab }) {
           ...prev,
           ...matching,
           id: prevId,
-          conversationId: prevId
+          conversationId: prevId,
+          contextBanner: prev.contextBanner || matching.contextBanner,
+          initialMessage: prev.initialMessage || matching.initialMessage,
+          productName: prev.productName || matching.productName,
+          productPrice: prev.productPrice || matching.productPrice,
+          productImage: prev.productImage || matching.productImage
         };
       });
     });

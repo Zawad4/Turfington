@@ -350,7 +350,44 @@ export async function getOrCreateDirectConversation(currentUser, targetUser) {
 
   try {
     const snap = await getDoc(convRef);
+    const existingData = snap.exists() ? snap.data() : null;
+
+    // Current user's inbox
+    const myInboxRef = doc(db, 'users', currentUid, 'inbox', conversationId);
+    // Target user's inbox
+    const theirInboxRef = doc(db, 'users', targetUid, 'inbox', conversationId);
+
     if (snap.exists()) {
+      // Ensure inbox references exist for both participants in Firestore
+      Promise.allSettled([
+        setDoc(myInboxRef, {
+          conversationId,
+          id: conversationId,
+          type: 'direct',
+          title: targetName,
+          name: targetName,
+          avatarUrl: targetAvatar,
+          otherUid: targetUid,
+          isEncrypted: true,
+          lastMessage: existingData?.lastMessage || null,
+          lastMessageTimestamp: existingData?.lastMessageTimestamp || serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true }),
+        setDoc(theirInboxRef, {
+          conversationId,
+          id: conversationId,
+          type: 'direct',
+          title: currentName,
+          name: currentName,
+          avatarUrl: currentAvatar,
+          otherUid: currentUid,
+          isEncrypted: true,
+          lastMessage: existingData?.lastMessage || null,
+          lastMessageTimestamp: existingData?.lastMessageTimestamp || serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true })
+      ]).catch(() => {});
+
       return { id: snap.id, ...snap.data() };
     }
 
@@ -374,7 +411,6 @@ export async function getOrCreateDirectConversation(currentUser, targetUser) {
     batch.set(convRef, convData);
 
     // Current user's inbox
-    const myInboxRef = doc(db, 'users', currentUid, 'inbox', conversationId);
     batch.set(myInboxRef, {
       conversationId,
       type: 'direct',
@@ -393,7 +429,6 @@ export async function getOrCreateDirectConversation(currentUser, targetUser) {
     });
 
     // Target user's inbox
-    const theirInboxRef = doc(db, 'users', targetUid, 'inbox', conversationId);
     batch.set(theirInboxRef, {
       conversationId,
       type: 'direct',
@@ -994,13 +1029,19 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
       console.warn('Encryption fallback:', encErr);
     }
 
-    // Firestore batch update in background
-    try {
-      const messageRef = doc(db, 'conversations', conversationId, 'messages', messageId);
-      const convRef = doc(db, 'conversations', conversationId);
+    // Resolve variables outside try block for bulletproof error recovery
+    const isDirect = conversationId.startsWith('direct_');
+    const messageRef = doc(db, 'conversations', conversationId, 'messages', messageId);
+    const convRef = doc(db, 'conversations', conversationId);
 
-      let members = [senderUid];
-      if (recipientUid) members.push(recipientUid);
+    let members = [senderUid];
+    if (recipientUid) members.push(recipientUid);
+
+    if (isDirect) {
+      const parts = conversationId.replace('direct_', '').split('_');
+      members = Array.from(new Set([...members, ...parts])).filter(Boolean);
+    } else {
+      // Group: resolve all group members across Firestore & local cache
       try {
         const convSnap = await getDoc(convRef);
         if (convSnap.exists()) {
@@ -1010,16 +1051,59 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
         }
       } catch (e) {}
 
-      const remoteMsgDoc = {
-        ...localMessageDoc,
-        text: encryptedText,
-        content: encryptedText,
-        createdAt: serverTimestamp()
-      };
+      try {
+        const groupRef = doc(db, 'communityGroups', conversationId);
+        const groupSnap = await getDoc(groupRef);
+        if (groupSnap.exists()) {
+          const gData = groupSnap.data();
+          if (Array.isArray(gData.members)) {
+            members = Array.from(new Set([...members, ...gData.members]));
+          }
+        }
+        const membersSnap = await getDocs(collection(db, 'communityGroups', conversationId, 'members'));
+        membersSnap.docs.forEach(d => members.push(d.id));
+      } catch (e) {}
 
-      const batch = writeBatch(db);
-      batch.set(messageRef, remoteMsgDoc);
-      batch.set(convRef, {
+      try {
+        const groups = JSON.parse(localStorage.getItem('turfington_community_groups') || '[]');
+        const match = groups.find(g => (g.groupId === conversationId || g.id === conversationId));
+        if (match && Array.isArray(match.members)) {
+          members = Array.from(new Set([...members, ...match.members]));
+        }
+      } catch (e) {}
+    }
+
+    members = Array.from(new Set(members.filter(Boolean)));
+
+    // Prevent oversized base64 strings from inflating remote Firestore message documents
+    const cleanSenderAvatar = (senderAvatar && senderAvatar.startsWith('data:image') && senderAvatar.length > 500)
+      ? ''
+      : senderAvatar;
+    const cleanRecipientAvatar = (recipientAvatar && recipientAvatar.startsWith('data:image') && recipientAvatar.length > 500)
+      ? ''
+      : recipientAvatar;
+
+    const remoteMsgDoc = {
+      ...localMessageDoc,
+      avatar: cleanSenderAvatar,
+      senderAvatar: cleanSenderAvatar,
+      text: encryptedText,
+      content: encryptedText,
+      createdAt: serverTimestamp()
+    };
+
+    // Firestore update: First ensure message document is saved in remote database!
+    try {
+      // 1. Save message to conversations/{conversationId}/messages/{messageId}
+      await setDoc(messageRef, remoteMsgDoc);
+
+      // 2. Update conversation document
+      await setDoc(convRef, {
+        id: conversationId,
+        conversationId,
+        type: isDirect ? 'direct' : 'group',
+        members: members,
+        participants: members,
         lastMessage: {
           text: encryptedText,
           senderUid,
@@ -1030,45 +1114,22 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
           timestamp: Date.now()
         },
         lastMessageTimestamp: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        members: members
+        updatedAt: serverTimestamp()
       }, { merge: true });
 
-      const isDirect = conversationId.startsWith('direct_');
-      members.forEach(memberUid => {
-        const userInboxRef = doc(db, 'users', memberUid, 'inbox', conversationId);
-        const isSender = memberUid === senderUid;
-
-        batch.set(userInboxRef, {
-          conversationId,
-          type: isDirect ? 'direct' : 'group',
-          title: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
-          name: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
-          avatarUrl: isDirect ? (isSender ? recipientAvatar : senderAvatar) : (options.groupAvatar || ''),
-          otherUid: isDirect ? (isSender ? recipientUid : senderUid) : null,
-          lastMessage: {
-            text: encryptedText,
-            senderUid,
-            senderName,
-            isEncrypted: true,
-            type: options.type || 'text',
-            timestamp: Date.now()
-          },
-          lastMessageTimestamp: serverTimestamp(),
-          unreadCount: isSender ? 0 : increment(1),
-          ...(isSender ? { lastReadTimestamp: serverTimestamp() } : {}),
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-      });
-
-      await batch.commit();
-    } catch (firestoreErr) {
-      console.warn('sendChatMessage Firestore batch notice, executing fallback writes:', firestoreErr);
-      try {
-        const isDirect = conversationId.startsWith('direct_');
-        await Promise.allSettled([
-          setDoc(messageRef, remoteMsgDoc),
-          setDoc(convRef, {
+      // 3. Update inbox for all conversation participants
+      await Promise.allSettled(
+        members.map(memberUid => {
+          const userInboxRef = doc(db, 'users', memberUid, 'inbox', conversationId);
+          const isSender = memberUid === senderUid;
+          return setDoc(userInboxRef, {
+            conversationId,
+            id: conversationId,
+            type: isDirect ? 'direct' : 'group',
+            title: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
+            name: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
+            avatarUrl: isDirect ? (isSender ? cleanRecipientAvatar : cleanSenderAvatar) : (options.groupAvatar || ''),
+            otherUid: isDirect ? (isSender ? recipientUid : senderUid) : null,
             lastMessage: {
               text: encryptedText,
               senderUid,
@@ -1078,33 +1139,16 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
               timestamp: Date.now()
             },
             lastMessageTimestamp: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            members: members
-          }, { merge: true }),
-          ...members.map(memberUid => {
-            const userInboxRef = doc(db, 'users', memberUid, 'inbox', conversationId);
-            const isSender = memberUid === senderUid;
-            return setDoc(userInboxRef, {
-              conversationId,
-              type: isDirect ? 'direct' : 'group',
-              title: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
-              name: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
-              avatarUrl: isDirect ? (isSender ? recipientAvatar : senderAvatar) : (options.groupAvatar || ''),
-              otherUid: isDirect ? (isSender ? recipientUid : senderUid) : null,
-              lastMessage: {
-                text: encryptedText,
-                senderUid,
-                senderName,
-                isEncrypted: true,
-                type: options.type || 'text',
-                timestamp: Date.now()
-              },
-              lastMessageTimestamp: serverTimestamp(),
-              unreadCount: isSender ? 0 : increment(1),
-              updatedAt: serverTimestamp()
-            }, { merge: true });
-          })
-        ]);
+            unreadCount: isSender ? 0 : increment(1),
+            ...(isSender ? { lastReadTimestamp: serverTimestamp() } : {}),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        })
+      );
+    } catch (firestoreErr) {
+      console.warn('sendChatMessage Firestore notice, attempting fallback writes:', firestoreErr);
+      try {
+        await setDoc(messageRef, remoteMsgDoc);
       } catch (fallbackErr) {
         console.warn('Individual setDoc fallback notice:', fallbackErr);
       }
@@ -1498,10 +1542,120 @@ export function subscribeToUserInbox(uid, callback) {
 
       callback(mergedList);
     }, (err) => {
-      console.warn('subscribeToUserInbox notice (using local cache):', err);
-      const fallback = getLocalInboxWithDiscovery(uid);
-      callback(fallback);
+      console.warn('subscribeToUserInbox notice (trying non-ordered query fallback):', err);
+      try {
+        const fallbackInboxQuery = query(
+          collection(db, 'users', uid, 'inbox'),
+          limit(50)
+        );
+        onSnapshot(fallbackInboxQuery, async (snap) => {
+          const rawItems = snap.docs.map(d => ({
+            id: d.id,
+            conversationId: d.id,
+            ...d.data()
+          }));
+          const items = await Promise.all(rawItems.map(async (item) => {
+            if (item.lastMessage && item.lastMessage.text) {
+              const rawText = item.lastMessage.text;
+              const decrypted = await decryptMessageText(rawText, item.conversationId);
+              return {
+                ...item,
+                lastMessage: {
+                  ...item.lastMessage,
+                  text: decrypted,
+                  isEncrypted: isMessageEncrypted(rawText) || !!item.lastMessage.isEncrypted
+                }
+              };
+            }
+            return item;
+          }));
+          callback(items);
+        }, () => {
+          const fallback = getLocalInboxWithDiscovery(uid);
+          callback(fallback);
+        });
+      } catch (e) {
+        const fallback = getLocalInboxWithDiscovery(uid);
+        callback(fallback);
+      }
     });
+
+    // 3. Remote discovery: find any conversations where user is in members array in Firestore
+    getDocs(query(collection(db, 'conversations'), where('members', 'array-contains', uid), limit(50)))
+      .then(async (convsSnap) => {
+        if (!convsSnap.empty) {
+          const discovered = [];
+          for (const d of convsSnap.docs) {
+            const cData = d.data();
+            const cid = d.id;
+            const isDirect = cid.startsWith('direct_') || cData.type === 'direct';
+            const otherUid = isDirect ? (cData.members || []).find(m => m !== uid) : null;
+            
+            let title = cData.title || cData.name || (isDirect ? 'Athlete' : 'Sports Group');
+            let avatarUrl = cData.avatarUrl || cData.avatar || '';
+
+            if (isDirect && otherUid) {
+              try {
+                const partnerDoc = await getDoc(doc(db, 'users', otherUid));
+                if (partnerDoc.exists()) {
+                  const pData = partnerDoc.data();
+                  title = pData.displayName || pData.full_name || pData.name || title;
+                  avatarUrl = pData.avatarUrl || pData.avatar || avatarUrl;
+                }
+              } catch {}
+            }
+
+            let decryptedLastMsg = null;
+            if (cData.lastMessage && cData.lastMessage.text) {
+              const rawText = cData.lastMessage.text;
+              const decrypted = await decryptMessageText(rawText, cid);
+              decryptedLastMsg = {
+                ...cData.lastMessage,
+                text: decrypted,
+                isEncrypted: isMessageEncrypted(rawText) || !!cData.lastMessage.isEncrypted
+              };
+            }
+
+            const item = {
+              id: cid,
+              conversationId: cid,
+              type: isDirect ? 'direct' : 'group',
+              title,
+              name: title,
+              avatarUrl,
+              otherUid,
+              lastMessage: decryptedLastMsg || cData.lastMessage || null,
+              lastMessageTimestamp: cData.lastMessageTimestamp || cData.updatedAt || null,
+              updatedAt: cData.updatedAt || null
+            };
+
+            discovered.push(item);
+
+            // Backfill user inbox doc in Firestore in background
+            setDoc(doc(db, 'users', uid, 'inbox', cid), {
+              ...item,
+              unreadCount: 0
+            }, { merge: true }).catch(() => {});
+          }
+
+          if (discovered.length > 0) {
+            const localKey = `turfington_inbox_${uid}`;
+            const local = JSON.parse(localStorage.getItem(localKey) || '[]');
+            const map = new Map();
+            local.forEach(i => map.set(i.conversationId || i.id, i));
+            discovered.forEach(i => {
+              const prev = map.get(i.conversationId);
+              map.set(i.conversationId, { ...prev, ...i });
+            });
+            const merged = Array.from(map.values());
+            localStorage.setItem(localKey, JSON.stringify(merged));
+            try { callback(merged); } catch {}
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Remote conversation discovery notice:', err);
+      });
 
     return () => {
       if (typeof window !== 'undefined') {
@@ -1556,6 +1710,26 @@ export function subscribeToMessages(conversationId, arg2, arg3 = 50) {
   const initialLocal = getLocalMessages(conversationId);
   safeCallback({ messages: initialLocal, oldestDoc: null, hasMore: false });
 
+  // 1b. If local store is empty, trigger immediate getDocs from Firestore to populate chat history immediately
+  if (initialLocal.length === 0) {
+    getDocs(query(collection(db, 'conversations', conversationId, 'messages'), limit(pageSize)))
+      .then(async (snap) => {
+        if (!snap.empty) {
+          const raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          raw.sort((a, b) => parseMsgTime(a) - parseMsgTime(b));
+          const decrypted = await Promise.all(raw.map(async m => {
+            const rawContent = m.text || m.content || '';
+            const isEnc = isMessageEncrypted(rawContent) || !!m.isEncrypted;
+            const dec = isEnc ? await decryptMessageText(rawContent, conversationId) : rawContent;
+            return { ...m, text: dec, content: dec, isEncrypted: isEnc };
+          }));
+          const merged = saveLocalMessages(conversationId, decrypted);
+          safeCallback({ messages: (merged && merged.length > 0) ? merged : decrypted, oldestDoc: snap.docs[0] || null, hasMore: snap.docs.length === pageSize });
+        }
+      })
+      .catch(() => {});
+  }
+
   // 2. Setup Firestore listener
   try {
     const msgQuery = query(
@@ -1564,7 +1738,9 @@ export function subscribeToMessages(conversationId, arg2, arg3 = 50) {
       limit(pageSize)
     );
 
-    return onSnapshot(msgQuery, async (snapshot) => {
+    let unsubFallback = null;
+
+    const processSnapshot = async (snapshot) => {
       const docs = snapshot.docs;
       const oldestDoc = docs.length > 0 ? docs[docs.length - 1] : null;
 
@@ -1590,13 +1766,48 @@ export function subscribeToMessages(conversationId, arg2, arg3 = 50) {
       // Merge remote messages into persistent local store
       const merged = saveLocalMessages(conversationId, decryptedMessages);
       safeCallback({ messages: (merged && merged.length > 0) ? merged : decryptedMessages, oldestDoc, hasMore: docs.length === pageSize });
-    }, (err) => {
-      console.warn('subscribeToMessages listener notice (relying on local store):', err);
-      // 1. Deliver local messages immediately without delay!
-      const fallbackMsgs = getLocalMessages(conversationId);
-      safeCallback({ messages: fallbackMsgs, oldestDoc: null, hasMore: false });
+    };
 
-      // 2. Non-blocking fallback to Express backend if running
+    const unsubPrimary = onSnapshot(msgQuery, processSnapshot, (err) => {
+      console.warn('subscribeToMessages listener notice (trying fallback non-ordered query):', err);
+      try {
+        const fallbackQuery = query(
+          collection(db, 'conversations', conversationId, 'messages'),
+          limit(pageSize)
+        );
+        unsubFallback = onSnapshot(fallbackQuery, async (fbSnapshot) => {
+          const docs = fbSnapshot.docs;
+          const rawMessages = docs.map(d => ({
+            id: d.id,
+            ...d.data()
+          }));
+          rawMessages.sort((a, b) => parseMsgTime(a) - parseMsgTime(b));
+
+          const decryptedMessages = await Promise.all(rawMessages.map(async (m) => {
+            const rawContent = m.text || m.content || '';
+            const isEnc = isMessageEncrypted(rawContent) || !!m.isEncrypted;
+            const decrypted = isEnc ? await decryptMessageText(rawContent, conversationId) : rawContent;
+            return {
+              ...m,
+              text: decrypted,
+              content: decrypted,
+              isEncrypted: isEnc
+            };
+          }));
+
+          const merged = saveLocalMessages(conversationId, decryptedMessages);
+          safeCallback({ messages: (merged && merged.length > 0) ? merged : decryptedMessages, oldestDoc: null, hasMore: false });
+        }, (fbErr) => {
+          console.warn('Fallback Firestore query error:', fbErr);
+          const fallbackMsgs = getLocalMessages(conversationId);
+          safeCallback({ messages: fallbackMsgs, oldestDoc: null, hasMore: false });
+        });
+      } catch (e) {
+        const fallbackMsgs = getLocalMessages(conversationId);
+        safeCallback({ messages: fallbackMsgs, oldestDoc: null, hasMore: false });
+      }
+
+      // Non-blocking fallback to Express backend if running
       fetch(`${API_BASE}/api/messages?chatId=${encodeURIComponent(conversationId)}`)
         .then(res => res.ok ? res.json() : null)
         .then(async data => {
@@ -1620,6 +1831,11 @@ export function subscribeToMessages(conversationId, arg2, arg3 = 50) {
         })
         .catch(() => {});
     });
+
+    return () => {
+      if (typeof unsubPrimary === 'function') unsubPrimary();
+      if (typeof unsubFallback === 'function') unsubFallback();
+    };
   } catch (e) {
     const fallbackMsgs = getLocalMessages(conversationId);
     safeCallback({ messages: fallbackMsgs, oldestDoc: null, hasMore: false });
