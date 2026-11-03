@@ -562,7 +562,7 @@ function TournamentRegistrationModal({ tournament, user, onClose, onSuccess }) {
 /* ─── Create Tournament Form (Owner) ─────────────────── */
 function CreateTournamentForm({ onClose, onCreated }) {
   const [form, setForm] = useState({
-    title: '', sport: 'Football', startDate: '', endDate: '', venue: '', city: '',
+    title: '', sport: '', startDate: '', endDate: '', venue: '', city: '',
     prizePool: '', entryFee: '', slots: '16', format: 'Knockout', level: 'All Levels',
     teamSize: '1', registrationDeadline: '', contactPhone: '', contactEmail: '',
     rules: '', description: '', image: '', banner: '', pfp: ''
@@ -804,9 +804,29 @@ function CreateTournamentForm({ onClose, onCreated }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Sport *</label>
-              <select value={form.sport} onChange={e => setForm({...form, sport: e.target.value})} className={inputClass}>
-                {['Football','Badminton','Table Tennis','Bowling','Cricket'].map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <input
+                type="text"
+                value={form.sport}
+                onChange={e => setForm({...form, sport: e.target.value})}
+                required
+                placeholder="Type sport name (e.g. Football, Basketball, Padel...)"
+                list="tournament-sport-suggestions"
+                className={inputClass}
+              />
+              <datalist id="tournament-sport-suggestions">
+                <option value="Football" />
+                <option value="Cricket" />
+                <option value="Badminton" />
+                <option value="Table Tennis" />
+                <option value="Bowling" />
+                <option value="Basketball" />
+                <option value="Tennis" />
+                <option value="Padel" />
+                <option value="Pickleball" />
+                <option value="Volleyball" />
+                <option value="Squash" />
+                <option value="Futsal" />
+              </datalist>
             </div>
             <div>
               <label className={labelClass}>Format *</label>
@@ -995,6 +1015,18 @@ export default function Tournaments({ role, user }) {
     );
   }, [tournaments, currentUserId]);
 
+  const dynamicSportTabs = useMemo(() => {
+    const baseTabs = ['All', 'Football', 'Badminton', 'Table Tennis', 'Bowling', 'Cricket'];
+    const customSports = new Set();
+    tournaments.forEach(t => {
+      const s = (t?.sport || '').trim();
+      if (s && !baseTabs.includes(s)) {
+        customSports.add(s);
+      }
+    });
+    return [...baseTabs, ...Array.from(customSports)];
+  }, [tournaments]);
+
   const filtered = tournaments.filter(t =>
     activeFilter === 'All' || t.sport === activeFilter
   );
@@ -1172,7 +1204,7 @@ export default function Tournaments({ role, user }) {
 
       {/* ── Sport Filter Tabs ─────────────────────────── */}
       <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-2 mb-8">
-        {SPORTS_TABS.map(tab => (
+        {dynamicSportTabs.map(tab => (
           <button
             key={tab}
             onClick={() => setActiveFilter(tab)}
