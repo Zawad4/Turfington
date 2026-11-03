@@ -12,6 +12,20 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error("React ErrorBoundary caught an error:", error, errorInfo);
+    // If a chunk load failed after a new Vercel deployment, automatically reload to fetch latest assets
+    const msg = error?.message || '';
+    if (
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('dynamically imported module') ||
+      msg.includes('Loading chunk')
+    ) {
+      const now = Date.now();
+      const last = sessionStorage.getItem('turfington_chunk_reload');
+      if (!last || now - parseInt(last, 10) > 10000) {
+        sessionStorage.setItem('turfington_chunk_reload', now.toString());
+        window.location.reload();
+      }
+    }
   }
 
   handleReset = () => {

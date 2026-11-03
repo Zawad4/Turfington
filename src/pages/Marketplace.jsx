@@ -20,7 +20,14 @@ import {
   Trash2,
   Edit3
 } from 'lucide-react';
-import { apiFetchMarketplaceItems, apiCreateMarketplaceItem, apiUpdateMarketplaceItem, apiDeleteMarketplaceItem } from '../services/db';
+import { 
+  apiFetchMarketplaceItems, 
+  apiSubscribeMarketplaceItems, 
+  apiCreateMarketplaceItem, 
+  apiUpdateMarketplaceItem, 
+  apiDeleteMarketplaceItem,
+  getInterconnectedAccounts 
+} from '../services/db';
 
 export default function Marketplace({ 
   likedProducts = [], 
@@ -63,23 +70,17 @@ export default function Marketplace({
   const [productsList, setProductsList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    let active = true;
-    const fetchItems = async () => {
-      try {
-        setIsLoading(true);
-        const items = await apiFetchMarketplaceItems();
-        if (active && Array.isArray(items)) {
-          setProductsList(items);
-        }
-      } catch (err) {
-        console.warn('Failed to load marketplace items:', err);
-      } finally {
-        if (active) setIsLoading(false);
+    useEffect(() => {
+    setIsLoading(true);
+    const unsubscribe = apiSubscribeMarketplaceItems((items) => {
+      if (Array.isArray(items)) {
+        setProductsList(items);
       }
+      setIsLoading(false);
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
-    fetchItems();
-    return () => { active = false; };
   }, []);
 
   const categories = ['All', 'Equipment', 'Jerseys', 'Shoes', 'Accessories', 'Rackets', 'Bowling gear'];
@@ -93,16 +94,43 @@ export default function Marketplace({
     ? safeProductsList 
     : safeProductsList.filter(p => p && p.category === selectedCategory);
 
-  const isItemOwner = (p) => {
-    if (!p || !user) return false;
+    const isItemOwner = (p) => {
+    if (!p) return false;
+    if (p.isMine === true) return true;
+    if (!user) return false;
+
     const currentUserId = user?.id || user?.uid || user?.firebase_uid;
     const currentUserName = user?.full_name || user?.name || user?.username;
-    
-    return Boolean(
-      (currentUserId && (p.seller_id === currentUserId || p.userId === currentUserId || p.sellerId === currentUserId)) ||
-      (currentUserName && (p.sellerName === currentUserName || p.sellerName === 'You')) ||
-      p.isMine === true
-    );
+    const currentUserEmail = (user?.email || '').toLowerCase().trim();
+    const itemSellerEmail = (p.sellerEmail || p.seller_email || '').toLowerCase().trim();
+
+    if (currentUserId && (p.seller_id === currentUserId || p.userId === currentUserId || p.sellerId === currentUserId || p.seller_uid === currentUserId)) {
+      return true;
+    }
+    if (currentUserName && (p.sellerName === currentUserName || p.sellerName === 'You')) {
+      return true;
+    }
+    if (currentUserEmail && itemSellerEmail && currentUserEmail === itemSellerEmail) {
+      return true;
+    }
+
+    try {
+      const connected = (typeof getInterconnectedAccounts === 'function') ? getInterconnectedAccounts() : [];
+      if (Array.isArray(connected) && connected.length > 0) {
+        return connected.some(acc => {
+          const accId = acc.id || acc.uid || acc.firebase_uid;
+          const accName = acc.full_name || acc.name;
+          const accEmail = (acc.email || '').toLowerCase().trim();
+          return (
+            (accId && (p.seller_id === accId || p.userId === accId || p.sellerId === accId || p.seller_uid === accId)) ||
+            (accName && p.sellerName === accName) ||
+            (accEmail && itemSellerEmail && accEmail === itemSellerEmail)
+          );
+        });
+      }
+    } catch {}
+
+    return false;
   };
 
   const toggleWishlist = (productId) => {
@@ -204,7 +232,11 @@ export default function Marketplace({
       price: parseFloat(itemPrice),
       condition: itemCondition,
       description: itemDesc,
-      seller_id: user?.id || user?.uid || 'usr_me',
+      seller_id: user?.id || user?.uid || user?.firebase_uid || 'usr_me',
+      sellerId: user?.id || user?.uid || user?.firebase_uid || 'usr_me',
+      seller_uid: user?.id || user?.uid || user?.firebase_uid || 'usr_me',
+      sellerEmail: user?.email || '',
+      seller_email: user?.email || '',
       sellerName: user?.full_name || user?.name || user?.username || 'You',
       sellerAvatar: user?.avatar_url || user?.avatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(user?.full_name || user?.name || 'Athlete')}`,
       isMine: true

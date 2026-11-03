@@ -3383,8 +3383,11 @@ export async function apiFetchMarketplaceItems() {
         !MOCK_SELLER_NAMES.has(item.seller_name)
       );
       const map = new Map();
-      [...cleanDbItems, ...localItems].forEach(item => {
+      localItems.forEach(item => {
         if (item && item.id) map.set(item.id, item);
+      });
+      cleanDbItems.forEach(item => {
+        if (item && item.id) map.set(item.id, { ...(map.get(item.id) || {}), ...item });
       });
       const merged = Array.from(map.values());
       try {
@@ -3396,16 +3399,47 @@ export async function apiFetchMarketplaceItems() {
     console.warn('apiFetchMarketplaceItems remote fetch warning:', err);
   }
 
-  try {
-    localStorage.setItem('turfington_marketplace_items', JSON.stringify(localItems));
-  } catch {}
-
   return localItems;
 }
 
+export function apiSubscribeMarketplaceItems(callback) {
+  if (typeof callback !== 'function') return () => {};
+
+  // 1. Initial cached/remote load
+  apiFetchMarketplaceItems().then(items => callback(items));
+
+  // 2. Window event listener
+  const handleUpdate = () => {
+    apiFetchMarketplaceItems().then(items => callback(items));
+  };
+  window.addEventListener('turfington_marketplace_updated', handleUpdate);
+
+  // 3. Firestore onSnapshot real-time listener
+  let unsubFirestore = null;
+  try {
+    unsubFirestore = onSnapshot(collection(db, 'marketplace_items'), (snap) => {
+      const dbItems = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(item => item && item.id && !MOCK_MARKETPLACE_IDS.has(item.id));
+      try {
+        localStorage.setItem('turfington_marketplace_items', JSON.stringify(dbItems));
+      } catch {}
+      callback(dbItems);
+    }, (err) => {
+      console.warn('marketplace onSnapshot warning:', err);
+    });
+  } catch {}
+
+  return () => {
+    window.removeEventListener('turfington_marketplace_updated', handleUpdate);
+    if (typeof unsubFirestore === 'function') unsubFirestore();
+  };
+}
+
 export async function apiCreateMarketplaceItem(itemData) {
+  const currentUid = auth.currentUser?.uid || itemData.seller_id || itemData.sellerId || 'usr_' + Date.now();
   const newItem = {
-    id: 'mp_' + Date.now(),
+    id: itemData.id || ('mp_' + Date.now()),
     name: itemData.name || 'Sports Equipment',
     category: itemData.category || 'Equipment',
     price: Number(itemData.price) || 0,
@@ -3414,7 +3448,10 @@ export async function apiCreateMarketplaceItem(itemData) {
     description: itemData.description || '',
     image: itemData.image_url || itemData.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400',
     image_url: itemData.image_url || itemData.image || 'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?q=80&w=400',
-    seller_id: itemData.seller_id || 'usr_me',
+    seller_id: itemData.seller_id || currentUid,
+    sellerId: itemData.seller_id || currentUid,
+    seller_uid: itemData.seller_id || currentUid,
+    userId: itemData.seller_id || currentUid,
     sellerName: typeof itemData.sellerName === 'string' ? itemData.sellerName : 'Community Athlete',
     sellerAvatar: itemData.sellerAvatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=Athlete',
     isUserCreated: true,
@@ -3436,12 +3473,26 @@ export async function apiCreateMarketplaceItem(itemData) {
     console.warn('localStorage save item warning:', err);
   }
 
+  // Deterministic setDoc to Firestore
   try {
-    addDoc(collection(db, 'marketplace_items'), {
+    await setDoc(doc(db, 'marketplace_items', newItem.id), {
       ...itemData,
       ...newItem,
       createdAt: serverTimestamp()
-    }).catch(() => {});
+    }, { merge: true });
+  } catch (firestoreErr) {
+    console.warn('apiCreateMarketplaceItem Firestore notice:', firestoreErr);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_marketplace_updated', { detail: newItem }));
+  }
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('turfington_marketplace_channel');
+      bc.postMessage({ type: 'MARKETPLACE_UPDATED', item: newItem });
+      bc.close();
+    }
   } catch {}
 
   return { success: true, item: newItem };
@@ -3464,8 +3515,12 @@ export async function apiUpdateMarketplaceItem(itemId, updatedData) {
   }
 
   try {
-    setDoc(doc(db, 'marketplace_items', itemId), updatedData, { merge: true }).catch(() => {});
+    await setDoc(doc(db, 'marketplace_items', itemId), updatedData, { merge: true });
   } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_marketplace_updated', { detail: { id: itemId, ...updatedData } }));
+  }
 
   return { success: true };
 }
@@ -3485,7 +3540,20 @@ export async function apiDeleteMarketplaceItem(itemId) {
   }
 
   try {
-    deleteDoc(doc(db, 'marketplace_items', itemId)).catch(() => {});
+    await deleteDoc(doc(db, 'marketplace_items', itemId));
+  } catch (e) {
+    console.warn('apiDeleteMarketplaceItem Firestore notice:', e);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_marketplace_updated', { detail: { id: itemId, deleted: true } }));
+  }
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('turfington_marketplace_channel');
+      bc.postMessage({ type: 'MARKETPLACE_UPDATED', item: { id: itemId, deleted: true } });
+      bc.close();
+    }
   } catch {}
 
   return { success: true };

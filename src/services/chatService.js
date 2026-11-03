@@ -420,7 +420,46 @@ export async function getOrCreateDirectConversation(currentUser, targetUser) {
       }).catch(() => {});
     } catch {}
 
-    await batch.commit();
+    try {
+      await batch.commit();
+    } catch (batchErr) {
+      console.warn('getOrCreateDirectConversation batch notice, attempting individual setDocs:', batchErr);
+      await Promise.allSettled([
+        setDoc(convRef, convData, { merge: true }),
+        setDoc(myInboxRef, {
+          conversationId,
+          type: 'direct',
+          title: targetName,
+          name: targetName,
+          avatarUrl: targetAvatar,
+          otherUid: targetUid,
+          isEncrypted: true,
+          is_google_user: !!targetUser.is_google_user,
+          lastMessage: null,
+          lastMessageTimestamp: serverTimestamp(),
+          unreadCount: 0,
+          isPinned: false,
+          isMuted: false,
+          updatedAt: serverTimestamp()
+        }, { merge: true }),
+        setDoc(theirInboxRef, {
+          conversationId,
+          type: 'direct',
+          title: currentName,
+          name: currentName,
+          avatarUrl: currentAvatar,
+          otherUid: currentUid,
+          isEncrypted: true,
+          is_google_user: !!currentUser.is_google_user,
+          lastMessage: null,
+          lastMessageTimestamp: serverTimestamp(),
+          unreadCount: 0,
+          isPinned: false,
+          isMuted: false,
+          updatedAt: serverTimestamp()
+        }, { merge: true })
+      ]);
+    }
 
     return {
       ...convData,
@@ -755,7 +794,7 @@ export async function leaveCommunityGroup(groupId, user) {
  * Send message with local persistent storage, batched Firestore updates, and inbox fanout
  */
 export async function sendChatMessage(conversationId, senderUser, text, options = {}) {
-  const senderUid = auth.currentUser?.uid || senderUser?.uid || senderUser?.firebase_uid || senderUser?.id;
+  const senderUid = senderUser?.uid || senderUser?.firebase_uid || senderUser?.id || auth.currentUser?.uid;
   if (!senderUid || !text || !text.trim()) throw new Error('Sender UID and text required');
 
   const cleanText = text.trim();
@@ -1006,7 +1045,45 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
 
       await batch.commit();
     } catch (firestoreErr) {
-      console.warn('sendChatMessage Firestore background notice:', firestoreErr);
+      console.warn('sendChatMessage Firestore batch notice, executing fallback writes:', firestoreErr);
+      try {
+        await Promise.allSettled([
+          setDoc(messageRef, remoteMsgDoc),
+          setDoc(convRef, {
+            lastMessage: {
+              text: encryptedText,
+              senderUid,
+              senderName,
+              isEncrypted: true,
+              type: options.type || 'text',
+              timestamp: Date.now()
+            },
+            lastMessageTimestamp: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            members: members
+          }, { merge: true }),
+          ...members.map(memberUid => {
+            const userInboxRef = doc(db, 'users', memberUid, 'inbox', conversationId);
+            const isSender = memberUid === senderUid;
+            return setDoc(userInboxRef, {
+              conversationId,
+              lastMessage: {
+                text: encryptedText,
+                senderUid,
+                senderName,
+                isEncrypted: true,
+                type: options.type || 'text',
+                timestamp: Date.now()
+              },
+              lastMessageTimestamp: serverTimestamp(),
+              unreadCount: isSender ? 0 : increment(1),
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+          })
+        ]);
+      } catch (fallbackErr) {
+        console.warn('Individual setDoc fallback notice:', fallbackErr);
+      }
     }
 
     // Express backend fallback persistence
