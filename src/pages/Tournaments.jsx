@@ -943,8 +943,17 @@ export default function Tournaments({ role, user }) {
       const formatted = list.map(t => {
         const isUserRegistered = sRegs.includes(t.id) ||
           (Array.isArray(t.registrations) && t.registrations.some(r => r.uid === currentUserId || r.userId === currentUserId));
+        const prizePoolStr = typeof t.prizePool === 'number' ? ('₹' + t.prizePool.toLocaleString('en-IN')) : String(t.prizePool || '₹0');
+        const entryFeeStr = typeof t.entryFee === 'number' ? (t.entryFee === 0 ? 'Free' : ('₹' + t.entryFee.toLocaleString('en-IN'))) : String(t.entryFee || 'Free');
         return {
           ...t,
+          prizePool: prizePoolStr,
+          entryFee: entryFeeStr,
+          registrations: Array.isArray(t.registrations) ? t.registrations : [],
+          slots: parseInt(t.slots, 10) || 16,
+          filled: parseInt(t.filled, 10) || (Array.isArray(t.registrations) ? t.registrations.length : 0),
+          status: t.status || 'Open',
+          date: t.date || (t.startDate ? (t.startDate + (t.endDate ? ' – ' + t.endDate : '')) : 'Upcoming Date'),
           registered: isUserRegistered,
           image: t.banner || t.image || t.pfp || DEFAULT_SPORT_IMAGES[t.sport] || '/trophy.png'
         };
@@ -1000,8 +1009,22 @@ export default function Tournaments({ role, user }) {
       return;
     }
     try {
-      const newT = await apiCreateTournament(form, user);
-      setTournaments(prev => [newT, ...prev.filter(t => t.id !== newT.id)]);
+      const rawNewT = await apiCreateTournament(form, user);
+      const prizePoolStr = typeof rawNewT.prizePool === 'number' ? ('₹' + rawNewT.prizePool.toLocaleString('en-IN')) : String(rawNewT.prizePool || '₹0');
+      const entryFeeStr = typeof rawNewT.entryFee === 'number' ? (rawNewT.entryFee === 0 ? 'Free' : ('₹' + rawNewT.entryFee.toLocaleString('en-IN'))) : String(rawNewT.entryFee || 'Free');
+      const safeNewT = {
+        ...rawNewT,
+        prizePool: prizePoolStr,
+        entryFee: entryFeeStr,
+        registrations: Array.isArray(rawNewT.registrations) ? rawNewT.registrations : [],
+        slots: parseInt(rawNewT.slots, 10) || 16,
+        filled: 0,
+        status: rawNewT.status || 'Open',
+        date: rawNewT.date || (rawNewT.startDate ? (rawNewT.startDate + (rawNewT.endDate ? ' – ' + rawNewT.endDate : '')) : 'Upcoming Date'),
+        registered: false,
+        image: rawNewT.banner || rawNewT.image || rawNewT.pfp || DEFAULT_SPORT_IMAGES[rawNewT.sport] || '/trophy.png'
+      };
+      setTournaments(prev => [safeNewT, ...prev.filter(t => t.id !== safeNewT.id)]);
       loadAllTournaments();
     } catch (err) {
       console.error('Failed to create tournament:', err);
@@ -1080,7 +1103,7 @@ export default function Tournaments({ role, user }) {
                       <div className="flex flex-wrap gap-4 mt-2 text-xs text-neutral-400">
                         <span className="flex items-center"><Calendar className="w-3 h-3 mr-1" />{t.date}</span>
                         <span className="flex items-center"><Users className="w-3 h-3 mr-1" />{t.filled}/{t.slots} Registered</span>
-                        <span className="flex items-center"><IndianRupee className="w-3 h-3 mr-0.5" />{t.prizePool.replace('₹','')}</span>
+                        <span className="flex items-center"><IndianRupee className="w-3 h-3 mr-0.5" />{String(t.prizePool || '0').replace(/₹/g, '').trim()}</span>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2 flex-shrink-0">
@@ -1114,22 +1137,22 @@ export default function Tournaments({ role, user }) {
                       >
                         <div className="p-5">
                           <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-neutral-400 mb-4">
-                            Registered Participants ({t.registrations.length})
+                            Registered Participants ({(t.registrations || []).length})
                           </h4>
-                          {t.registrations.length === 0 ? (
+                          {(t.registrations || []).length === 0 ? (
                             <p className="text-neutral-600 text-xs">No registrations yet.</p>
                           ) : (
                             <div className="space-y-2">
-                              {t.registrations.map((r, i) => (
+                              {(t.registrations || []).map((r, i) => (
                                 <div key={i} className="flex items-center justify-between p-3 bg-white/[0.02] border border-white/5 rounded-xl text-xs">
                                   <div>
-                                    <span className="font-bold text-white">{r.name}</span>
-                                    <span className="text-neutral-500 ml-2">{r.team}</span>
+                                    <span className="font-bold text-white">{r?.name || r?.captainName || 'Athlete'}</span>
+                                    <span className="text-neutral-500 ml-2">{r?.team || r?.teamName || ''}</span>
                                   </div>
                                   <span className={`text-[9px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
-                                    r.paid ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                    r?.paid ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                                   }`}>
-                                    {r.paid ? 'Paid' : 'Pending'}
+                                    {r?.paid ? 'Paid' : 'Pending'}
                                   </span>
                                 </div>
                               ))}
