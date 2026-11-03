@@ -844,8 +844,20 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
     const parts = conversationId.replace('direct_', '').split('_');
     recipientUid = parts.find(p => p !== senderUid) || null;
   }
-  const recipientName = options.recipientName || 'Athlete';
-  const recipientAvatar = options.recipientAvatar || '';
+  let recipientName = options.recipientName;
+  let recipientAvatar = options.recipientAvatar;
+  if ((!recipientName || recipientName === 'Athlete') && recipientUid) {
+    try {
+      const allAthletes = JSON.parse(localStorage.getItem('turfington_athletes_cache') || '[]');
+      const found = allAthletes.find(a => a.id === recipientUid || a.uid === recipientUid || a.firebase_uid === recipientUid);
+      if (found) {
+        recipientName = found.full_name || found.name || 'Athlete';
+        recipientAvatar = recipientAvatar || found.avatar || found.avatar_url || '';
+      }
+    } catch {}
+  }
+  if (!recipientName) recipientName = 'Athlete';
+  if (!recipientAvatar) recipientAvatar = '';
 
   const preview = {
     text: cleanText,
@@ -1022,12 +1034,18 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
         members: members
       }, { merge: true });
 
+      const isDirect = conversationId.startsWith('direct_');
       members.forEach(memberUid => {
         const userInboxRef = doc(db, 'users', memberUid, 'inbox', conversationId);
         const isSender = memberUid === senderUid;
 
         batch.set(userInboxRef, {
           conversationId,
+          type: isDirect ? 'direct' : 'group',
+          title: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
+          name: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
+          avatarUrl: isDirect ? (isSender ? recipientAvatar : senderAvatar) : (options.groupAvatar || ''),
+          otherUid: isDirect ? (isSender ? recipientUid : senderUid) : null,
           lastMessage: {
             text: encryptedText,
             senderUid,
@@ -1047,6 +1065,7 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
     } catch (firestoreErr) {
       console.warn('sendChatMessage Firestore batch notice, executing fallback writes:', firestoreErr);
       try {
+        const isDirect = conversationId.startsWith('direct_');
         await Promise.allSettled([
           setDoc(messageRef, remoteMsgDoc),
           setDoc(convRef, {
@@ -1067,6 +1086,11 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
             const isSender = memberUid === senderUid;
             return setDoc(userInboxRef, {
               conversationId,
+              type: isDirect ? 'direct' : 'group',
+              title: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
+              name: isDirect ? (isSender ? recipientName : senderName) : (options.groupName || 'Sports Group'),
+              avatarUrl: isDirect ? (isSender ? recipientAvatar : senderAvatar) : (options.groupAvatar || ''),
+              otherUid: isDirect ? (isSender ? recipientUid : senderUid) : null,
               lastMessage: {
                 text: encryptedText,
                 senderUid,
@@ -1424,7 +1448,37 @@ export function subscribeToUserInbox(uid, callback) {
       const mergedMap = new Map();
       items.forEach(it => {
         const id = it.conversationId || it.id;
-        if (id) mergedMap.set(id, it);
+        if (id) {
+          const localMatch = localItems.find(l => (l.conversationId === id || l.id === id));
+          let resolvedTitle = it.title || it.name || localMatch?.title || localMatch?.name;
+          let resolvedAvatar = it.avatarUrl || it.avatar || localMatch?.avatarUrl || localMatch?.avatar;
+          let otherUid = it.otherUid || localMatch?.otherUid;
+
+          if ((!resolvedTitle || resolvedTitle === 'Athlete') && id.startsWith('direct_')) {
+            if (!otherUid) {
+              const parts = id.replace('direct_', '').split('_');
+              otherUid = parts.find(p => p !== uid) || null;
+            }
+            if (otherUid) {
+              try {
+                const allAthletes = JSON.parse(localStorage.getItem('turfington_athletes_cache') || '[]');
+                const found = allAthletes.find(a => a.id === otherUid || a.uid === otherUid || a.firebase_uid === otherUid);
+                if (found) {
+                  resolvedTitle = found.full_name || found.name || resolvedTitle;
+                  resolvedAvatar = resolvedAvatar || found.avatar || found.avatar_url || '';
+                }
+              } catch {}
+            }
+          }
+
+          mergedMap.set(id, {
+            ...it,
+            title: resolvedTitle || it.title || 'Athlete',
+            name: resolvedTitle || it.name || 'Athlete',
+            avatarUrl: resolvedAvatar || it.avatarUrl || '',
+            otherUid: otherUid || it.otherUid || null
+          });
+        }
       });
       localItems.forEach(it => {
         const id = it.conversationId || it.id;
@@ -1785,4 +1839,20 @@ export async function ensureDefaultCommunityData(currentUser) {
   } catch (err) {
     console.warn('ensureDefaultCommunityData notice:', err);
   }
+}
+
+/**
+ * Fetch group members from communityGroups/{groupId}/members subcollection in Firestore
+ */
+export async function apiFetchGroupMembers(groupId) {
+  if (!groupId) return [];
+  try {
+    const memSnap = await getDocs(collection(db, 'communityGroups', groupId, 'members'));
+    if (!memSnap.empty) {
+      return memSnap.docs.map(d => ({ id: d.id, uid: d.id, ...d.data() }));
+    }
+  } catch (e) {
+    console.warn('apiFetchGroupMembers notice:', e);
+  }
+  return [];
 }

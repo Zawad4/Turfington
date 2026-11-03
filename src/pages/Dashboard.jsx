@@ -106,6 +106,7 @@ function ContactOwnerModal({ booking, user, onClose }) {
   const [sending, setSending] = useState(false);
   const [chatId, setChatId] = useState(null);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
 
   const ownerId = booking.owner_id || booking.ownerId || 'usr_venue_owner';
   const ownerName = booking.owner_name || booking.venue || 'Venue Owner';
@@ -135,7 +136,9 @@ function ContactOwnerModal({ booking, user, onClose }) {
   }, [booking, user, ownerId, ownerName]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const handleSend = async (e) => {
@@ -197,7 +200,7 @@ function ContactOwnerModal({ booking, user, onClose }) {
         </div>
 
         {/* Messages Body */}
-        <div className="flex-grow p-4 overflow-y-auto space-y-3 bg-[#080808]/50 text-xs">
+        <div ref={messagesContainerRef} className="flex-grow p-4 overflow-y-auto space-y-3 bg-[#080808]/50 text-xs">
           {messages.map((m) => {
             const isMe = m.sender_id === (user?.id || 'usr_me');
             return (

@@ -243,6 +243,18 @@ export default function App() {
     saveLocalState('turfington_liked_products', likedProducts);
   }, [likedProducts]);
 
+  // Disable automatic browser scroll restoration so pages never jump down unexpectedly
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+  }, []);
+
+  // Ensure every tab/page navigation starts cleanly at the top
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
+
   /* ── Navigation Handlers ───────────────────────────────────── */
   useEffect(() => {
     if (isOwner && (activeTab === 'discovery' || activeTab === 'dashboard')) {
@@ -266,7 +278,7 @@ export default function App() {
     const target = isOwner && (tab === 'discovery' || tab === 'dashboard') ? 'venue-manager' : tab;
     setNavHistory((prev) => (prev[prev.length - 1] === target ? prev : [...prev, target]));
     setActiveTab(target);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo(0, 0);
     setMobileMenuOpen(false);
   };
 
@@ -280,7 +292,7 @@ export default function App() {
     } else {
       setActiveTab('landing');
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo(0, 0);
   };
 
   const handleSwitchProfileAndSync = (selectedProfile) => {
@@ -295,7 +307,7 @@ export default function App() {
     const targetTab = selectedProfile?.role === 'owner' ? 'venue-manager' : 'landing';
     setNavHistory((prev) => (prev[prev.length - 1] === targetTab ? prev : [...prev, targetTab]));
     setActiveTab(targetTab);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo(0, 0);
     setMobileMenuOpen(false);
   };
 
@@ -527,7 +539,7 @@ export default function App() {
                 onBackToPlayer={() => {
                   setNavHistory((prev) => (prev[prev.length - 1] === 'landing' ? prev : [...prev, 'landing']));
                   setActiveTab('landing');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  window.scrollTo(0, 0);
                 }}
               />
             )}

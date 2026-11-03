@@ -4,14 +4,15 @@ import {
   Send, Paperclip, Smile, Image as ImageIcon, Check, CheckCheck,
   ChevronLeft, MoreVertical, Reply, Trash2, Edit2, ShieldAlert,
   Ban, X, Loader2, FileText, CornerDownRight, Heart, ThumbsUp, Laugh, Flame, Trophy,
-  Lock, ShieldCheck, Shield, Copy, Plus, UserPlus, Users
+  Lock, ShieldCheck, Shield, Copy, Plus, UserPlus, Users, MessageSquare, Info
 } from 'lucide-react';
 import {
   apiAddMessageReaction,
   apiBlockUser,
   apiSubmitReport,
   apiUploadChatAttachment,
-  subscribeToConversationRealtime
+  subscribeToConversationRealtime,
+  apiFetchAthletes
 } from '../services/db';
 import {
   joinCommunityGroup,
@@ -21,7 +22,8 @@ import {
   sendChatMessage,
   editChatMessage,
   deleteChatMessage,
-  markConversationAsRead
+  markConversationAsRead,
+  apiFetchGroupMembers
 } from '../services/chatService';
 import UserAvatar from './UserAvatar';
 import { useToast } from '../context';
@@ -38,7 +40,9 @@ export default function ChatWindowEnhanced({
   onJoinGroup = null,
   onLeaveGroup = null,
   contextBanner = null, // { type: 'marketplace'|'venue'|'game', title, price, image, subtitle }
-  isAdmin = false
+  isAdmin = false,
+  onStartDirectChat = null,
+  athletes = []
 }) {
   const { toast } = useToast();
 
@@ -122,6 +126,130 @@ export default function ChatWindowEnhanced({
       return name.includes(q) || handle.includes(q);
     });
   }, [athletesList, athleteSearch]);
+
+  // Group Details & Member List Modal States
+  const [showGroupDetailsModal, setShowGroupDetailsModal] = useState(false);
+  const [firestoreGroupMembers, setFirestoreGroupMembers] = useState([]);
+
+  useEffect(() => {
+    if (showGroupDetailsModal && isGroup && currentGroupId) {
+      apiFetchGroupMembers(currentGroupId).then(docs => {
+        if (Array.isArray(docs) && docs.length > 0) {
+          setFirestoreGroupMembers(docs);
+        }
+      });
+      if (athletesList.length === 0 && typeof apiFetchAthletes === 'function') {
+        apiFetchAthletes(currentUserId).then(res => {
+          if (Array.isArray(res)) setAthletesList(res);
+        });
+      }
+    }
+  }, [showGroupDetailsModal, isGroup, currentGroupId, currentUserId, athletesList.length]);
+
+  const resolvedMemberCount = useMemo(() => {
+    if (Array.isArray(chat.members)) return chat.members.length;
+    if (Array.isArray(chat.participants)) return chat.participants.length;
+    if (typeof chat.members === 'number') return chat.members;
+    if (typeof chat.memberCount === 'number') return chat.memberCount;
+    return 2;
+  }, [chat.members, chat.participants, chat.memberCount]);
+
+  const resolvedMembers = useMemo(() => {
+    if (!isGroup) return [];
+    const uidMap = new Map();
+    const combinedAthletes = [...(athletes || []), ...(athletesList || [])];
+
+    // 1. Add current user if a member
+    if (currentUserId && isMember) {
+      uidMap.set(currentUserId, {
+        id: currentUserId,
+        uid: currentUserId,
+        displayName: currentUser?.full_name || currentUser?.name || 'You',
+        name: currentUser?.full_name || currentUser?.name || 'You',
+        avatarUrl: currentUser?.avatarUrl || currentUser?.avatar || '',
+        avatar: currentUser?.avatarUrl || currentUser?.avatar || '',
+        role: (currentUserId === chat.creatorUid || effectiveIsAdmin) ? 'admin' : 'member',
+        isSelf: true
+      });
+    }
+
+    // 2. Add creator
+    if (chat.creatorUid && !uidMap.has(chat.creatorUid)) {
+      const matched = combinedAthletes.find(a => a.id === chat.creatorUid || a.uid === chat.creatorUid || a.firebase_uid === chat.creatorUid);
+      uidMap.set(chat.creatorUid, {
+        id: chat.creatorUid,
+        uid: chat.creatorUid,
+        displayName: matched?.full_name || matched?.name || chat.creatorName || 'Group Creator',
+        name: matched?.full_name || matched?.name || chat.creatorName || 'Group Creator',
+        avatarUrl: matched?.avatar || matched?.avatar_url || chat.creatorAvatar || '',
+        avatar: matched?.avatar || matched?.avatar_url || chat.creatorAvatar || '',
+        email: matched?.email || '',
+        role: 'admin',
+        isSelf: chat.creatorUid === currentUserId
+      });
+    }
+
+    // 3. Add members from chat.members array
+    const candidateUids = [];
+    if (Array.isArray(chat.members)) {
+      chat.members.forEach(m => {
+        if (typeof m === 'string') candidateUids.push(m);
+        else if (m?.uid || m?.id) candidateUids.push(m.uid || m.id);
+      });
+    }
+    if (Array.isArray(chat.participants)) {
+      chat.participants.forEach(p => {
+        if (typeof p === 'string') candidateUids.push(p);
+        else if (p?.uid || p?.id) candidateUids.push(p.uid || p.id);
+      });
+    }
+
+    candidateUids.forEach(uid => {
+      if (!uid || uidMap.has(uid)) return;
+      const matched = combinedAthletes.find(a => a.id === uid || a.uid === uid || a.firebase_uid === uid);
+      uidMap.set(uid, {
+        id: uid,
+        uid: uid,
+        displayName: matched?.full_name || matched?.name || (uid === chat.creatorUid ? chat.creatorName : `Athlete (${uid.slice(0, 6)})`),
+        name: matched?.full_name || matched?.name || (uid === chat.creatorUid ? chat.creatorName : `Athlete (${uid.slice(0, 6)})`),
+        avatarUrl: matched?.avatar || matched?.avatar_url || '',
+        avatar: matched?.avatar || matched?.avatar_url || '',
+        email: matched?.email || '',
+        role: uid === chat.creatorUid ? 'admin' : 'member',
+        isSelf: uid === currentUserId
+      });
+    });
+
+    // 4. Add Firestore members
+    firestoreGroupMembers.forEach(f => {
+      const fUid = f.uid || f.id;
+      if (!fUid) return;
+      if (uidMap.has(fUid)) {
+        const existing = uidMap.get(fUid);
+        uidMap.set(fUid, {
+          ...existing,
+          displayName: f.displayName || f.name || existing.displayName,
+          avatarUrl: f.avatarUrl || f.avatar || existing.avatarUrl,
+          role: f.role || existing.role
+        });
+      } else {
+        const matched = combinedAthletes.find(a => a.id === fUid || a.uid === fUid || a.firebase_uid === fUid);
+        uidMap.set(fUid, {
+          id: fUid,
+          uid: fUid,
+          displayName: f.displayName || matched?.full_name || matched?.name || 'Athlete',
+          name: f.displayName || matched?.full_name || matched?.name || 'Athlete',
+          avatarUrl: f.avatarUrl || matched?.avatar || matched?.avatar_url || '',
+          avatar: f.avatarUrl || matched?.avatar || matched?.avatar_url || '',
+          email: matched?.email || '',
+          role: f.role || (fUid === chat.creatorUid ? 'admin' : 'member'),
+          isSelf: fUid === currentUserId
+        });
+      }
+    });
+
+    return Array.from(uidMap.values());
+  }, [chat, isGroup, currentUserId, currentUser, isMember, effectiveIsAdmin, athletes, athletesList, firestoreGroupMembers]);
   const conversationId = chat?.id || chat?.conversationId || chat?.groupId;
 
   // 0. Instantly populate messages from local persistent store (0ms thread continuation!)
@@ -167,6 +295,7 @@ export default function ChatWindowEnhanced({
   const sendingLockRef = useRef(false);
   const realtimeRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const currentUserName = currentUser?.name || currentUser?.displayName || currentUser?.full_name || 'You';
@@ -300,9 +429,11 @@ export default function ChatWindowEnhanced({
     return result;
   }, [messages, currentUserId, currentUserName, currentUser]);
 
-  // Auto scroll to bottom
+  // Auto scroll messages container to bottom (NEVER scroll the window)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   }, [dedupedMessages, typingUsers]);
 
   // Handle typing status broadcast
@@ -524,65 +655,79 @@ export default function ChatWindowEnhanced({
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <div className="relative flex-shrink-0">
-            {isGroup ? (
-              <img
-                src={chat.imageUrl || chat.groupImage || chat.avatar || chat.avatar_url || chat.image_url || '/football_group.jpg'}
-                alt={chat.name || chat.user}
-                onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  const sport = String(chat?.sport || chat?.sportCategory || chat?.name || '').toLowerCase();
-                  if (sport.includes('badminton') || sport.includes('smasher')) e.currentTarget.src = '/badminton_group.jpg';
-                  else if (sport.includes('cricket')) e.currentTarget.src = '/cricket_group.jpg';
-                  else e.currentTarget.src = '/football_group.jpg';
-                }}
-                className="w-10 h-10 rounded-2xl object-cover border border-white/15 shadow-md"
-              />
-            ) : (
-              <UserAvatar
-                user={{
-                  full_name: chat.name || chat.user,
-                  name: chat.name || chat.user,
-                  avatar: chat.avatar || chat.avatar_url,
-                  avatar_url: chat.avatar || chat.avatar_url,
-                  uid: chat.otherUid || chat.id
-                }}
-                className="w-10 h-10 rounded-2xl text-sm"
-              />
-            )}
-            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0a0a0d] ${isOnline ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-neutral-600'}`} />
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-display font-black text-white text-sm leading-snug tracking-tight">
-                {chat.name || chat.user || 'Sports Conversation'}
-              </h3>
-            </div>
-            <div className="text-[10px] text-neutral-400 flex items-center gap-1.5 font-light">
+          <div
+            onClick={() => {
+              if (isGroup) setShowGroupDetailsModal(true);
+            }}
+            className={`flex items-center space-x-3.5 ${isGroup ? 'cursor-pointer p-1.5 -m-1.5 rounded-2xl hover:bg-white/5 transition-colors group/header' : ''}`}
+            title={isGroup ? 'Click to view group details & player roster' : undefined}
+          >
+            <div className="relative flex-shrink-0">
               {isGroup ? (
-                <span className="flex items-center gap-1">
-                  <span>{chat.members || chat.participants?.length || 2} members</span>
-                  <span>•</span>
-                  <span className={isOnline ? 'text-emerald-400 font-medium' : 'text-neutral-500'}>
-                    {isOnline ? '🟢 Live Activity' : 'Offline'}
-                  </span>
-                </span>
+                <img
+                  src={chat.imageUrl || chat.groupImage || chat.avatar || chat.avatar_url || chat.image_url || '/football_group.jpg'}
+                  alt={chat.name || chat.user}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    const sport = String(chat?.sport || chat?.sportCategory || chat?.name || '').toLowerCase();
+                    if (sport.includes('badminton') || sport.includes('smasher')) e.currentTarget.src = '/badminton_group.jpg';
+                    else if (sport.includes('cricket')) e.currentTarget.src = '/cricket_group.jpg';
+                    else e.currentTarget.src = '/football_group.jpg';
+                  }}
+                  className="w-10 h-10 rounded-2xl object-cover border border-white/15 shadow-md group-hover/header:border-indigo-500/50 transition-colors"
+                />
               ) : (
-                <span className="flex items-center gap-1.5">
-                  {isOnline ? (
-                    <span className="text-emerald-400 font-medium flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active Now
-                    </span>
-                  ) : (
-                    <span>Last seen recently</span>
-                  )}
-                  <span>•</span>
-                  <span className="text-emerald-400/90 flex items-center gap-0.5">
-                    <Lock className="w-2.5 h-2.5 text-emerald-400" /> Encrypted
-                  </span>
-                </span>
+                <UserAvatar
+                  user={{
+                    full_name: chat.name || chat.user,
+                    name: chat.name || chat.user,
+                    avatar: chat.avatar || chat.avatar_url,
+                    avatar_url: chat.avatar || chat.avatar_url,
+                    uid: chat.otherUid || chat.id
+                  }}
+                  className="w-10 h-10 rounded-2xl text-sm"
+                />
               )}
+              <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0a0a0d] ${isOnline ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-neutral-600'}`} />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-display font-black text-white text-sm leading-snug tracking-tight group-hover/header:text-indigo-400 transition-colors flex items-center gap-1.5">
+                  <span>{chat.name || chat.user || 'Sports Conversation'}</span>
+                </h3>
+                {isGroup && (
+                  <span className="text-[10px] font-bold text-neutral-400 group-hover/header:text-white bg-white/5 px-2 py-0.5 rounded-full border border-white/10 flex items-center gap-1 transition-colors">
+                    <Users className="w-3 h-3 text-indigo-400" />
+                    <span>Members</span>
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-neutral-400 flex items-center gap-1.5 font-light">
+                {isGroup ? (
+                  <span className="flex items-center gap-1">
+                    <span className="font-medium text-neutral-300">{resolvedMemberCount} {resolvedMemberCount === 1 ? 'member' : 'members'}</span>
+                    <span>•</span>
+                    <span className={isOnline ? 'text-emerald-400 font-medium' : 'text-neutral-500'}>
+                      {isOnline ? '🟢 Live Activity' : 'Offline'}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    {isOnline ? (
+                      <span className="text-emerald-400 font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active Now
+                      </span>
+                    ) : (
+                      <span>Last seen recently</span>
+                    )}
+                    <span>•</span>
+                    <span className="text-emerald-400/90 flex items-center gap-0.5">
+                      <Lock className="w-2.5 h-2.5 text-emerald-400" /> Encrypted
+                    </span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -710,7 +855,7 @@ export default function ChatWindowEnhanced({
       )}
 
       {/* ── MESSAGES LIST ── */}
-      <div className="flex-grow overflow-y-auto p-4 space-y-4 no-scrollbar">
+      <div ref={messagesContainerRef} className="flex-grow overflow-y-auto p-4 space-y-4 no-scrollbar">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full text-indigo-400 space-y-2">
             <Loader2 className="w-6 h-6 animate-spin" />
@@ -754,11 +899,12 @@ export default function ChatWindowEnhanced({
             </div>
 
             {dedupedMessages.map((msg) => {
-              const isSelf = (msg.senderUid === currentUserId) || (msg.sender_id === currentUserId) || msg.user === 'You' || msg.self;
+              const isSelf = isMsgFromSelf(msg);
               const isDeleted = Boolean(msg.isDeleted || msg.deleted_at);
               const parentMsg = (msg.replyToId ? dedupedMessages.find(m => m.id === msg.replyToId) : null) || (msg.reply_to_id ? dedupedMessages.find(m => m.id === msg.reply_to_id) : null);
               const senderAvatar = msg.senderAvatar || msg.sender?.avatar_url || msg.avatar || '';
-              const senderName = msg.senderName || msg.sender?.full_name || msg.user || 'Athlete';
+              const senderName = msg.senderName || msg.sender_name || msg.sender?.full_name || msg.sender?.name || (msg.user && msg.user !== 'You' ? msg.user : null) || 'Athlete';
+              const isAdminSender = isGroup && (msg.senderUid === chat?.creatorUid || msg.sender_id === chat?.creatorUid);
 
               return (
                 <div
@@ -779,6 +925,17 @@ export default function ChatWindowEnhanced({
                   )}
 
                   <div className={`max-w-[78%] sm:max-w-[70%] ${isSelf ? 'items-end' : 'items-start'} flex flex-col gap-1 relative`}>
+                    {/* Clear Sender Name Header above message */}
+                    <div className={`flex items-center gap-1.5 px-1 text-[11px] ${isSelf ? 'justify-end' : 'justify-start'}`}>
+                      <span className={`font-black ${isSelf ? 'text-indigo-400' : 'text-emerald-400'}`}>
+                        {isSelf ? 'You' : senderName}
+                      </span>
+                      {isAdminSender && (
+                        <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          Host
+                        </span>
+                      )}
+                    </div>
                   
                   {/* Action Menu (Reply, Edit, Delete, Reaction) on Hover */}
                   <div className={`absolute top-0 ${isSelf ? '-left-20' : '-right-20'} hidden group-hover/msg:flex items-center space-x-1 bg-[#18181b] border border-white/10 rounded-full px-2 py-1 shadow-lg z-10`}>
@@ -857,13 +1014,6 @@ export default function ChatWindowEnhanced({
                       ? 'bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 text-white rounded-br-xs shadow-[0_4px_20px_rgba(99,102,241,0.25)] border border-indigo-400/20'
                       : 'bg-[#15151a] border border-white/10 text-neutral-100 rounded-bl-xs shadow-md backdrop-blur-md'
                   }`}>
-
-                    {/* Sender Name in Groups */}
-                    {isGroup && !isSelf && (
-                      <span className="block text-[10px] font-extrabold text-indigo-400 mb-1">
-                        {msg.sender?.full_name || msg.user || 'Athlete'}
-                      </span>
-                    )}
 
                     {/* Inline Editing */}
                     {editingMsg?.id === msg.id ? (
@@ -1142,6 +1292,211 @@ export default function ChatWindowEnhanced({
                   className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all cursor-pointer shadow-md"
                 >
                   Got It
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── GROUP DETAILS & PLAYERS ROSTER MODAL ── */}
+      <AnimatePresence>
+        {showGroupDetailsModal && isGroup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-[#121216] border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl text-left flex flex-col max-h-[85vh]"
+            >
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 border-b border-white/8 flex items-center justify-between flex-shrink-0 bg-white/[0.02]">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-black text-white text-base tracking-tight uppercase">
+                      Group Details
+                    </h3>
+                    <p className="text-[11px] text-neutral-400 font-light">
+                      Community Info & Player Roster
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowGroupDetailsModal(false)}
+                  className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Scrollable Body */}
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto no-scrollbar flex-grow">
+                {/* Hero Group Card */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/30 via-white/[0.02] to-purple-950/20 border border-white/10 flex items-start gap-3.5">
+                  <img
+                    src={chat.imageUrl || chat.groupImage || chat.avatar || chat.avatar_url || '/football_group.jpg'}
+                    alt={chat.name || chat.user}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      const sport = String(chat?.sport || chat?.sportCategory || chat?.name || '').toLowerCase();
+                      if (sport.includes('badminton') || sport.includes('smasher')) e.currentTarget.src = '/badminton_group.jpg';
+                      else if (sport.includes('cricket')) e.currentTarget.src = '/cricket_group.jpg';
+                      else e.currentTarget.src = '/football_group.jpg';
+                    }}
+                    className="w-16 h-16 rounded-2xl object-cover border border-white/15 shadow-md flex-shrink-0"
+                  />
+                  <div className="min-w-0 flex-grow">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-display font-black text-white text-base tracking-tight leading-snug">
+                        {chat.name || chat.user}
+                      </h4>
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        {chat.sport || chat.sportCategory || 'Sports'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-neutral-300 mt-1 leading-relaxed">
+                      {chat.description || 'Welcome to this sports group! Connect with players, arrange matches, and talk sports.'}
+                    </p>
+
+                    <div className="flex items-center gap-3 mt-2 text-[11px] text-neutral-400 font-medium">
+                      <span>📍 {chat.locationReference || 'Chennai, Tamil Nadu'}</span>
+                      <span>•</span>
+                      <span className="text-emerald-400 font-bold">{resolvedMembers.length} {resolvedMembers.length === 1 ? 'Player' : 'Players'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Players / Member List */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-neutral-400">
+                      Players in this Group ({resolvedMembers.length})
+                    </span>
+                    {effectiveIsAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowGroupDetailsModal(false);
+                          setShowAdminInviteModal(true);
+                        }}
+                        className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Add Player</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="divide-y divide-white/[0.04] bg-white/[0.02] border border-white/8 rounded-2xl overflow-hidden">
+                    {resolvedMembers.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-neutral-400">No members listed yet.</div>
+                    ) : (
+                      resolvedMembers.map((member) => {
+                        const isSelfMember = member.isSelf || member.uid === currentUserId;
+                        return (
+                          <div
+                            key={member.uid || member.id}
+                            className="p-3 flex items-center justify-between gap-3 hover:bg-white/[0.03] transition-colors"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <UserAvatar
+                                user={{
+                                  name: member.displayName || member.name,
+                                  full_name: member.displayName || member.name,
+                                  avatar: member.avatarUrl || member.avatar,
+                                  avatar_url: member.avatarUrl || member.avatar,
+                                  uid: member.uid || member.id
+                                }}
+                                className="w-10 h-10 rounded-xl text-xs flex-shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-xs text-white truncate">
+                                    {member.displayName || member.name}
+                                  </span>
+                                  {isSelfMember && (
+                                    <span className="text-[10px] text-indigo-400 font-medium">(You)</span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-neutral-500 truncate block">
+                                  {member.email || (member.uid ? `ID: ${member.uid.slice(0, 8)}...` : 'Athlete')}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {member.role === 'admin' ? (
+                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                  Host / Admin
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-white/5 text-neutral-400 border border-white/10">
+                                  Player
+                                </span>
+                              )}
+
+                              {!isSelfMember && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowGroupDetailsModal(false);
+                                    if (typeof onStartDirectChat === 'function') {
+                                      onStartDirectChat({
+                                        id: member.uid || member.id,
+                                        uid: member.uid || member.id,
+                                        firebase_uid: member.uid || member.id,
+                                        full_name: member.displayName || member.name,
+                                        name: member.displayName || member.name,
+                                        avatar: member.avatarUrl || member.avatar,
+                                        avatar_url: member.avatarUrl || member.avatar
+                                      });
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 hover:border-indigo-500/60 text-indigo-300 hover:text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+                                  title={`Direct message ${member.displayName || member.name}`}
+                                >
+                                  <MessageSquare className="w-3 h-3 text-indigo-400" />
+                                  <span>Message</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Invite Link Action */}
+                <div className="p-3.5 rounded-2xl bg-black/40 border border-white/6 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-white block">Group Share Link</span>
+                    <span className="text-[11px] text-neutral-400 truncate block">Share with sports friends to join this room</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyInviteLink}
+                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedLink ? 'Copied!' : 'Copy Link'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-white/8 flex justify-end flex-shrink-0 bg-white/[0.01]">
+                <button
+                  type="button"
+                  onClick={() => setShowGroupDetailsModal(false)}
+                  className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Close
                 </button>
               </div>
             </motion.div>

@@ -806,9 +806,9 @@ export default function Community({ user, setTab }) {
   };
 
   return (
-    <div className="pt-16 sm:pt-20 min-h-screen bg-[#08080a] text-white flex flex-col font-sans select-none antialiased">
+    <div className="pt-24 sm:pt-28 min-h-screen bg-[#08080a] text-white flex flex-col font-sans select-none antialiased">
       {/* ── MAIN CONTENT CONTAINER (FULL HEIGHT & ENLARGED) ───────── */}
-      <div className="max-w-[1650px] mx-auto w-full flex-grow flex p-2 sm:p-4 lg:p-5 gap-4 h-[calc(100vh-80px)]">
+      <div className="max-w-[1650px] mx-auto w-full flex-grow flex p-2 sm:p-4 lg:p-5 gap-4 h-[calc(100dvh-120px)] min-h-[620px]">
         
         {/* ── LEFT PANE: CONVERSATION LIST (ENLARGED & SPACIOUS) ── */}
         <div className={`w-full lg:w-[420px] xl:w-[460px] flex-shrink-0 flex flex-col bg-[#101014] border border-white/8 rounded-3xl overflow-hidden shadow-2xl ${
@@ -1117,15 +1117,41 @@ export default function Community({ user, setTab }) {
 
                   {/* Active existing conversations */}
                   {filteredDirect.map(item => {
-                    const isSelected = activeChat?.id === item.conversationId;
+                    const isSelected = (activeChat?.id === item.conversationId) || (activeChat?.conversationId === item.conversationId) || (activeChat?.id === item.id);
                     const unread = item.unreadCount || 0;
                     const lastSnippet = item.lastMessage?.text || 'Started a conversation';
                     const timeFormatted = formatTimestamp(item.lastMessageTimestamp);
 
+                    // Resolve partner details for direct messages with full fallbacks
+                    const isDirect = item.type === 'direct' || item.conversationId?.startsWith('direct_');
+                    const otherUid = item.otherUid || (isDirect
+                      ? item.conversationId.replace('direct_', '').split('_').find(p => p !== currentUserId)
+                      : null);
+
+                    const matchedAthlete = isDirect
+                      ? athletes.find(a => a.id === otherUid || a.uid === otherUid || a.firebase_uid === otherUid)
+                      : null;
+
+                    const displayTitle = item.title && item.title !== 'Athlete'
+                      ? item.title
+                      : (item.name && item.name !== 'Athlete'
+                        ? item.name
+                        : (matchedAthlete?.full_name || matchedAthlete?.name || (item.lastMessage?.senderUid !== currentUserId ? item.lastMessage?.senderName : null) || 'Athlete'));
+
+                    const displayAvatar = item.avatarUrl && !item.avatarUrl.includes('direct_')
+                      ? item.avatarUrl
+                      : (item.avatar || matchedAthlete?.avatar || matchedAthlete?.avatar_url || '');
+
                     return (
                       <div
                         key={item.conversationId}
-                        onClick={() => handleSelectChat(item)}
+                        onClick={() => handleSelectChat({
+                          ...item,
+                          title: displayTitle,
+                          name: displayTitle,
+                          avatarUrl: displayAvatar,
+                          otherUid
+                        })}
                         className={`p-4 flex items-center gap-3.5 transition-colors cursor-pointer group ${
                           isSelected
                             ? 'bg-indigo-600/15 border-l-4 border-indigo-500'
@@ -1136,18 +1162,18 @@ export default function Community({ user, setTab }) {
                         <div className="relative flex-shrink-0">
                           {item.type === 'group' ? (
                             <img
-                              src={item.avatarUrl || getGroupImage(item)}
-                              alt={item.title}
+                              src={displayAvatar || getGroupImage(item)}
+                              alt={displayTitle}
                               className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-cover border border-white/10 shadow-sm"
                             />
                           ) : (
                             <UserAvatar
                               user={{
-                                full_name: item.title,
-                                name: item.title,
-                                avatar: item.avatarUrl,
-                                avatar_url: item.avatarUrl,
-                                uid: item.otherUid
+                                full_name: displayTitle,
+                                name: displayTitle,
+                                avatar: displayAvatar,
+                                avatar_url: displayAvatar,
+                                uid: otherUid
                               }}
                               className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl text-base"
                             />
@@ -1161,7 +1187,7 @@ export default function Community({ user, setTab }) {
                             <div className="flex items-center gap-1.5 truncate">
                               {item.isPinned && <Pin className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 rotate-45" />}
                               <h4 className="font-display font-black text-sm text-white truncate tracking-tight">
-                                {item.title}
+                                {displayTitle}
                               </h4>
                             </div>
 
@@ -1322,6 +1348,8 @@ export default function Community({ user, setTab }) {
                   (user?.firebase_uid && activeChat.creatorUid === user.firebase_uid)
                 )
               )}
+              athletes={athletes}
+              onStartDirectChat={handleStartDirectChat}
             />
           ) : (
             <div className="flex-grow flex flex-col items-center justify-center p-8 text-center text-neutral-500 relative overflow-hidden">
