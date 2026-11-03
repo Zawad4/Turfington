@@ -6,7 +6,7 @@ import {
   Clock, Trophy, Users, Star, Lock, Loader2,
   UserPlus, UserCheck, MessageCircle, Medal, ChevronRight,
   Navigation, Wifi, WifiOff, RefreshCw, CreditCard, Check, Compass,
-  Heart, Share2, MessageSquare, X, CheckCircle, XCircle
+  Heart, Share2, MessageSquare, X, CheckCircle, XCircle, Zap
 } from 'lucide-react';
 import SportIcon from '../components/SportIcon';
 import VenueImage from '../components/VenueImage';
@@ -489,6 +489,9 @@ export default function Discovery({
           phone: t.phone,
           address: t.address || t.location || 'Chennai, Tamil Nadu',
           description: t.description || 'Modern synthetic sports venue.',
+          booking_mode: t.booking_mode || t.booking_type || (t.requires_approval ? 'request' : 'direct'),
+          booking_type: t.booking_mode || t.booking_type || (t.requires_approval ? 'request' : 'direct'),
+          requires_approval: t.requires_approval ?? ((t.booking_mode || t.booking_type) === 'request'),
           isNew: isCustom,
           owner_id: t.owner_id
         };
@@ -563,15 +566,24 @@ export default function Discovery({
 
   // Update distances when GPS is obtained or when rawActivities load
   const applyRealDistances = useCallback((lat, lng, sourceActivities) => {
+    const safeLat = parseFloat(lat) || 13.0827;
+    const safeLng = parseFloat(lng) || 80.2707;
     const listToMap = sourceActivities || rawActivities;
     setActivities(
       listToMap
         .map(a => {
-          const d = haversine(lat, lng, a.lat, a.lng);
+          const aLat = parseFloat(a.lat ?? a.latitude) || 13.0827;
+          const aLng = parseFloat(a.lng ?? a.longitude) || 80.2707;
+          const d = haversine(safeLat, safeLng, aLat, aLng);
+          const safeD = (typeof d === 'number' && !isNaN(d)) ? d : 1.0;
           return {
             ...a,
-            distanceNum: d,
-            distance: d < 0.2 ? 'Nearby (< 200m)' : `${d} km`
+            lat: aLat,
+            lng: aLng,
+            latitude: aLat,
+            longitude: aLng,
+            distanceNum: safeD,
+            distance: safeD < 0.2 ? 'Nearby (< 200m)' : `${safeD} km`
           };
         })
         .sort((a, b) => (a.distanceNum ?? 0) - (b.distanceNum ?? 0))
@@ -1214,9 +1226,12 @@ export default function Discovery({
 
               const nearbyList = activities
                 .map(turf => {
-                  const distNum = haversine(userLat, userLng, turf.lat || 13.0827, turf.lng || 80.2707);
-                  const distanceText = distNum < 0.2 ? 'Nearby (< 200m)' : `${distNum} km away`;
-                  return { ...turf, distanceNum: distNum, distanceText };
+                  const tLat = parseFloat(turf.lat ?? turf.latitude) || 13.0827;
+                  const tLng = parseFloat(turf.lng ?? turf.longitude) || 80.2707;
+                  const dist = haversine(userLat, userLng, tLat, tLng);
+                  const safeDist = (typeof dist === 'number' && !isNaN(dist)) ? dist : 1.0;
+                  const distanceText = safeDist < 0.2 ? 'Nearby (< 200m)' : `${safeDist} km away`;
+                  return { ...turf, lat: tLat, lng: tLng, distanceNum: safeDist, distanceText };
                 })
                 .filter(turf => {
                   if (selectedSport !== 'All') {
@@ -1921,33 +1936,35 @@ export default function Discovery({
                   <GoogleMap
                     mapContainerStyle={{ width: '100%', height: '600px' }}
                     center={{
-                      lat: userCoordinates?.lat || 13.0827,
-                      lng: userCoordinates?.lng || 80.2707
+                      lat: (typeof userCoordinates?.lat === 'number' && !isNaN(userCoordinates.lat)) ? userCoordinates.lat : 13.0827,
+                      lng: (typeof userCoordinates?.lng === 'number' && !isNaN(userCoordinates.lng)) ? userCoordinates.lng : 80.2707
                     }}
                     zoom={13}
                     onLoad={() => {
                       console.log('Fetched nearby turfs:', activities);
                     }}
                   >
-                    {userCoordinates && (
+                    {userCoordinates && typeof userCoordinates.lat === 'number' && !isNaN(userCoordinates.lat) && typeof userCoordinates.lng === 'number' && !isNaN(userCoordinates.lng) && (
                       <Marker 
                         position={{ lat: userCoordinates.lat, lng: userCoordinates.lng }} 
-                        icon={{ url: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png" }}
+                        icon={{ url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png" }}
                         title="You are here"
                       />
                     )}
-                    {activities.map((turf) => (
-                      <Marker
-                        key={turf.id}
-                        position={{
-                          lat: turf.lat,
-                          lng: turf.lng
-                        }}
-                        onClick={() => setSelectedMarker(turf)}
-                        title={turf.title}
-                      />
-                    ))}
-                    {selectedMarker && selectedMarker.lat && selectedMarker.lng && (
+                    {activities
+                      .filter(turf => typeof turf?.lat === 'number' && !isNaN(turf.lat) && typeof turf?.lng === 'number' && !isNaN(turf.lng))
+                      .map((turf) => (
+                        <Marker
+                          key={turf.id}
+                          position={{
+                            lat: turf.lat,
+                            lng: turf.lng
+                          }}
+                          onClick={() => setSelectedMarker(turf)}
+                          title={turf.title}
+                        />
+                      ))}
+                    {selectedMarker && typeof selectedMarker.lat === 'number' && !isNaN(selectedMarker.lat) && typeof selectedMarker.lng === 'number' && !isNaN(selectedMarker.lng) && (
                       <InfoWindow
                         position={{ lat: selectedMarker.lat, lng: selectedMarker.lng }}
                         onCloseClick={() => setSelectedMarker(null)}

@@ -362,17 +362,18 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
     onClose();
   };
 
-  const inputClass = "w-full bg-white/[0.03] border border-white/8 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-violet-500/50 transition-colors";
+  const inputClass = "w-full bg-[#131722] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-violet-500/50 transition-colors";
   const labelClass = "text-[10px] text-neutral-400 uppercase tracking-widest font-bold mb-1.5 block";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16 overflow-y-auto">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.85 }} exit={{ opacity: 0 }}
-        onClick={onClose} className="fixed inset-0 bg-black/85 backdrop-blur-md" />
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.95 }} exit={{ opacity: 0 }}
+        onClick={onClose} style={{ backgroundColor: 'rgba(0, 0, 0, 0.92)' }} className="fixed inset-0 bg-black/95 backdrop-blur-xl" />
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
-        className="relative bg-[#0d0f17] w-full max-w-[580px] border border-white/12 rounded-3xl shadow-2xl shadow-black/80 z-10 text-left mb-8 overflow-hidden">
+        style={{ backgroundColor: '#0b0e17', opacity: 1 }}
+        className="relative bg-[#0b0e17] w-full max-w-[580px] border border-white/15 rounded-3xl shadow-2xl shadow-black z-10 text-left mb-8 overflow-hidden">
 
-        <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+        <div style={{ backgroundColor: '#0e121d' }} className="p-6 border-b border-white/10 flex items-center justify-between">
           <div>
             <h3 className="font-display font-black text-white text-lg uppercase tracking-tight">
               {venue ? 'Edit Turf / Venue Listing' : 'Add New Turf / Venue'}
@@ -394,7 +395,7 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
           </div>
 
           {/* Location Picker Options */}
-          <div className="space-y-3.5 p-4 bg-white/[0.02] border border-white/8 rounded-2xl">
+          <div className="space-y-3.5 p-4 bg-[#131722] border border-white/10 rounded-2xl">
             <div className="flex items-center justify-between">
               <label className={labelClass}>Venue Location & GPS Auto-Calculation</label>
               {locationFeedback && (
@@ -536,7 +537,7 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
           </div>
 
           {/* Venue Image Upload & Alignment controls */}
-          <div className="space-y-3 p-4 bg-white/[0.02] border border-white/8 rounded-2xl">
+          <div className="space-y-3 p-4 bg-[#131722] border border-white/10 rounded-2xl">
             <label className={labelClass}>Venue Image (Choose Local File)</label>
             
             <div className="flex flex-col sm:flex-row gap-3">
@@ -596,7 +597,7 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
           </div>
 
           {/* Booking Approval Type Selector */}
-          <div className="space-y-3 p-4 bg-white/[0.02] border border-white/8 rounded-2xl">
+          <div className="space-y-3 p-4 bg-[#131722] border border-white/10 rounded-2xl">
             <div className="flex items-center justify-between">
               <label className={labelClass}>Booking Approval Type</label>
               <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
@@ -1648,9 +1649,17 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
   const handleEditVenue = async (updatedVenueData) => {
     if (!editingVenue) return;
     const vId = editingVenue.id;
-    await apiUpdateVenue(vId, updatedVenueData);
-    setVenues(prev => prev.map(v => v.id === vId ? { ...v, ...updatedVenueData } : v));
-    toast.success(`Venue "${updatedVenueData.name || 'Listing'}" updated successfully!`);
+    const finalVenue = {
+      ...editingVenue,
+      ...updatedVenueData,
+      id: vId,
+      owner_id: editingVenue.owner_id || user?.id || user?.firebase_uid || user?.uid,
+      owner_email: editingVenue.owner_email || user?.email || '',
+      owner_name: editingVenue.owner_name || user?.full_name || user?.name || 'Venue Owner'
+    };
+    await apiUpdateVenue(vId, finalVenue);
+    setVenues(prev => prev.map(v => (v.id === vId || v.name === finalVenue.name) ? { ...v, ...finalVenue } : v));
+    toast.success(`Venue "${finalVenue.name || 'Listing'}" updated successfully!`);
     setEditingVenue(null);
   };
 

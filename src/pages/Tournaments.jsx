@@ -5,7 +5,8 @@ import {
   Trophy, Plus, Users, Calendar, IndianRupee, Clock, ChevronRight,
   Flame, Shield, Star, MapPin, Filter, CheckCircle, X, Edit3, Trash2,
   ArrowRight, Crown, Medal, Swords, AlertCircle, Phone, FileText, Target,
-  ShieldCheck, QrCode, CreditCard, Smartphone, Building2
+  ShieldCheck, QrCode, CreditCard, Smartphone, Building2,
+  Check, Camera, Upload
 } from 'lucide-react';
 import SportIcon from '../components/SportIcon';
 import { formatTime12Hour } from '../utils/formatters';

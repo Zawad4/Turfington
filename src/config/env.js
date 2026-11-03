@@ -16,7 +16,7 @@ export const ENV = {
 
   // Firebase Configuration
   FIREBASE: {
-    API_KEY: metaEnv.VITE_FIREBASE_API_KEY || '',
+    API_KEY: metaEnv.VITE_FIREBASE_API_KEY || 'AIzaSyBJse-qZuxrbKM51ze5HQaw31CitPsdV5o',
     AUTH_DOMAIN: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || 'turfington-b759a.firebaseapp.com',
     PROJECT_ID: metaEnv.VITE_FIREBASE_PROJECT_ID || 'turfington-b759a',
     STORAGE_BUCKET: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || 'turfington-b759a.firebasestorage.app',
