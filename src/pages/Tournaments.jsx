@@ -954,7 +954,11 @@ export default function Tournaments({ role, user }) {
   const [expandedOwnerTournament, setExpandedOwnerTournament] = useState(null);
 
   const currentUserId = user?.uid || user?.id || user?.firebase_uid;
-  const isOwner = role === 'owner';
+  const isOwner = Boolean(
+    role === 'owner' || 
+    user?.role === 'owner' || 
+    (typeof user?.title === 'string' && user.title.toLowerCase().includes('owner'))
+  );
 
   const loadAllTournaments = useCallback(async () => {
     try {
@@ -1006,14 +1010,29 @@ export default function Tournaments({ role, user }) {
   }, [loadAllTournaments]);
 
   const myTournaments = useMemo(() => {
-    if (!currentUserId) return [];
-    return tournaments.filter(t => 
-      t.creator_id === currentUserId || 
-      t.creatorUid === currentUserId || 
-      t.owner_id === currentUserId ||
-      t.user_id === currentUserId
-    );
-  }, [tournaments, currentUserId]);
+    if (!user && !currentUserId) return [];
+    const allMyKeys = [
+      user?.id,
+      user?.uid,
+      user?.firebase_uid,
+      user?.email,
+      currentUserId
+    ].filter(Boolean).map(k => String(k).trim().toLowerCase());
+
+    return tournaments.filter(t => {
+      const matchKeys = [
+        t.creator_id,
+        t.creatorUid,
+        t.creator_uid,
+        t.owner_id,
+        t.user_id,
+        t.creator_email,
+        t.contactEmail
+      ].filter(Boolean).map(k => String(k).trim().toLowerCase());
+
+      return matchKeys.some(mk => allMyKeys.includes(mk));
+    });
+  }, [tournaments, user, currentUserId]);
 
   const dynamicSportTabs = useMemo(() => {
     const baseTabs = ['All', 'Football', 'Badminton', 'Table Tennis', 'Bowling', 'Cricket'];
@@ -1057,8 +1076,9 @@ export default function Tournaments({ role, user }) {
         registered: false,
         image: rawNewT.banner || rawNewT.image || rawNewT.pfp || DEFAULT_SPORT_IMAGES[rawNewT.sport] || '/trophy.png'
       };
+      setActiveFilter('All');
       setTournaments(prev => [safeNewT, ...prev.filter(t => t.id !== safeNewT.id)]);
-      loadAllTournaments();
+      await loadAllTournaments();
     } catch (err) {
       console.error('Failed to create tournament:', err);
       alert(err.message || 'Failed to create tournament.');
