@@ -1710,6 +1710,17 @@ export function subscribeToMessages(conversationId, arg2, arg3 = 50) {
   const initialLocal = getLocalMessages(conversationId);
   safeCallback({ messages: initialLocal, oldestDoc: null, hasMore: false });
 
+  // 1c. Listen for immediate local message dispatches for instant real-time thread updates
+  const handleLocalMsg = (e) => {
+    if (e.detail?.conversationId === conversationId) {
+      const updatedLocal = getLocalMessages(conversationId);
+      safeCallback({ messages: updatedLocal, oldestDoc: null, hasMore: false });
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('turfington_message_received', handleLocalMsg);
+  }
+
   // 1b. If local store is empty, trigger immediate getDocs from Firestore to populate chat history immediately
   if (initialLocal.length === 0) {
     getDocs(query(collection(db, 'conversations', conversationId, 'messages'), limit(pageSize)))
@@ -1833,13 +1844,20 @@ export function subscribeToMessages(conversationId, arg2, arg3 = 50) {
     });
 
     return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('turfington_message_received', handleLocalMsg);
+      }
       if (typeof unsubPrimary === 'function') unsubPrimary();
       if (typeof unsubFallback === 'function') unsubFallback();
     };
   } catch (e) {
     const fallbackMsgs = getLocalMessages(conversationId);
     safeCallback({ messages: fallbackMsgs, oldestDoc: null, hasMore: false });
-    return () => {};
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('turfington_message_received', handleLocalMsg);
+      }
+    };
   }
 }
 

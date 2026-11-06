@@ -23,6 +23,7 @@ import {
   registerDeviceToken,
   ensureDefaultCommunityData,
   markConversationAsRead,
+  sendChatMessage,
   SYSTEM_DEFAULT_GROUP_IDS,
   isSystemDefaultGroup
 } from '../services/chatService';
@@ -139,6 +140,8 @@ export default function Community({ user, setTab }) {
     }
   });
   const [activeChat, setActiveChat] = useState(null);
+  const lastDirectTargetKeyRef = useRef('');
+  const lastDirectTargetTimeRef = useRef(0);
   const [activeTabMode, setActiveTabMode] = useState('direct'); // Default to 'direct' per user specification
   const [selectedSport, setSelectedSport] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -221,19 +224,25 @@ export default function Community({ user, setTab }) {
     setFollowedAthletes(getLocalFollowing(currentUserId));
   };
 
-  // Check if routed from Discovery to start a direct chat
+  // Check if routed from Discovery or Marketplace to start a direct chat
   useEffect(() => {
-    try {
-      const targetRaw = localStorage.getItem('turfington_target_chat_user');
-      if (targetRaw) {
-        localStorage.removeItem('turfington_target_chat_user');
-        const targetPlayer = JSON.parse(targetRaw);
-        if (targetPlayer) {
-          handleStartDirectChat(targetPlayer);
+    const processTarget = () => {
+      try {
+        const targetRaw = localStorage.getItem('turfington_target_chat_user');
+        if (targetRaw) {
+          localStorage.removeItem('turfington_target_chat_user');
+          const targetPlayer = JSON.parse(targetRaw);
+          if (targetPlayer) {
+            handleStartDirectChat(targetPlayer);
+          }
         }
-      }
-    } catch {}
-  }, []);
+      } catch {}
+    };
+
+    processTarget();
+    const timer = setTimeout(processTarget, 100);
+    return () => clearTimeout(timer);
+  }, [currentUserId]);
 
   // Live player search effects
   useEffect(() => {
@@ -465,6 +474,14 @@ export default function Community({ user, setTab }) {
     try {
       const athleteId = athlete.id || athlete.uid || athlete.firebase_uid;
       if (!athleteId) return;
+
+      const reqKey = `${athleteId}_${athlete.productName || athlete.title || athlete.name || ''}`;
+      if (lastDirectTargetKeyRef.current === reqKey && (Date.now() - lastDirectTargetTimeRef.current) < 1500) {
+        return;
+      }
+      lastDirectTargetKeyRef.current = reqKey;
+      lastDirectTargetTimeRef.current = Date.now();
+
       const athleteName = athlete.displayName || athlete.full_name || athlete.name || 'Athlete';
       const athleteAvatar = athlete.avatarUrl || athlete.avatar || athlete.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${athleteId}`;
 
@@ -479,17 +496,13 @@ export default function Community({ user, setTab }) {
         is_google_user: !!(user?.is_google_user || user?.auth_provider === 'google' || auth.currentUser?.providerData?.some(p => p.providerId === 'google.com'))
       };
 
-      let conv = null;
-      try {
-        conv = await getOrCreateDirectConversation(me, athlete);
-      } catch (err) {
-        console.warn('getOrCreateDirectConversation error:', err);
-      }
+      const initialMessageToSend = athlete.initialMessage;
+      // Clear initialMessage on the incoming athlete object to prevent duplicate sending
+      athlete.initialMessage = null;
 
-      const convId = conv?.id || conv?.conversationId || getDirectConversationId(currentUserId, athleteId);
+      const convId = athlete.conversationId || (athlete.id && athlete.id.startsWith('direct_') ? athlete.id : getDirectConversationId(currentUserId, athleteId));
 
       const formatted = {
-        ...(conv || {}),
         id: convId,
         conversationId: convId,
         type: 'direct',
@@ -497,20 +510,25 @@ export default function Community({ user, setTab }) {
         title: athleteName,
         avatar: athleteAvatar,
         avatarUrl: athleteAvatar,
+        otherUid: athleteId,
         isMember: true,
         participants: [currentUserId, athleteId],
         venueName: athlete.venueName || athlete.productName,
         productName: athlete.productName || athlete.venueName,
         productPrice: athlete.productPrice,
         productImage: athlete.productImage,
-        initialMessage: athlete.initialMessage,
+        initialMessage: '', // Leave empty so input isn't cluttered after auto-sending!
         contextBanner: athlete.contextBanner
       };
 
-      // Immediately add/ensure in inboxItems state so conversation is visible in Direct DMs list
+      // 1. Set active chat and tab mode IMMEDIATELY (0ms delay!) so the view switches to chat pane right now!
+      setActiveChat(formatted);
+      setActiveTabMode('direct');
+      markConversationAsRead(currentUserId, convId);
+
+      // 2. Immediately add/ensure in inboxItems state so conversation is visible in Direct DMs list
       setInboxItems(prev => {
         const exists = prev.some(i => (i.conversationId === convId || i.id === convId));
-        if (exists) return prev;
         const newInboxEntry = {
           id: convId,
           conversationId: convId,
@@ -523,14 +541,55 @@ export default function Community({ user, setTab }) {
           unreadCount: 0,
           isPinned: false,
           isMuted: false,
-          lastMessage: null,
+          lastMessage: initialMessageToSend ? {
+            text: initialMessageToSend,
+            senderUid: currentUserId,
+            senderName: currentUserName,
+            timestamp: Date.now()
+          } : null,
           lastMessageTimestamp: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
+        if (exists) {
+          return prev.map(i => (i.conversationId === convId || i.id === convId) ? { ...i, ...newInboxEntry } : i);
+        }
         return [newInboxEntry, ...prev];
       });
 
-      // Notify backend Express server
+      // 3. Automatically send the product inquiry message if provided!
+      if (initialMessageToSend && typeof initialMessageToSend === 'string' && initialMessageToSend.trim()) {
+        const msgText = initialMessageToSend.trim();
+        try {
+          const sent = await sendChatMessage(convId, me, msgText, {
+            recipientUid: athleteId,
+            recipientName: athleteName,
+            recipientAvatar: athleteAvatar,
+            contextBanner: athlete.contextBanner
+          });
+          if (sent) {
+            setActiveChat(prev => prev && (prev.id === convId || prev.conversationId === convId) ? {
+              ...prev,
+              lastMessage: sent
+            } : prev);
+            setInboxItems(prev => prev.map(i => (i.conversationId === convId || i.id === convId) ? {
+              ...i,
+              lastMessage: sent,
+              lastMessageTimestamp: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            } : i));
+          }
+        } catch (msgErr) {
+          console.warn('Auto-send marketplace inquiry message notice:', msgErr);
+        }
+      }
+
+      // 4. Background async sync to Firestore & Express backend without blocking UI
+      try {
+        await getOrCreateDirectConversation(me, athlete);
+      } catch (convErr) {
+        console.warn('getOrCreateDirectConversation background sync notice:', convErr);
+      }
+
       try {
         fetch(`${API_BASE}/api/chats/direct`, {
           method: 'POST',
@@ -538,10 +597,6 @@ export default function Community({ user, setTab }) {
           body: JSON.stringify({ user1Id: currentUserId, user2Id: athleteId })
         }).catch(() => {});
       } catch {}
-
-      setActiveChat(formatted);
-      setActiveTabMode('direct');
-      markConversationAsRead(currentUserId, convId);
     } catch (err) {
       console.error('handleStartDirectChat error:', err);
     }

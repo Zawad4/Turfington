@@ -199,12 +199,17 @@ export default function Marketplace({
 
     try {
       localStorage.setItem('turfington_target_chat_user', JSON.stringify(sellerTarget));
-      window.dispatchEvent(new CustomEvent('turfington_open_direct_chat_target', { detail: sellerTarget }));
     } catch {}
 
     if (typeof setTab === 'function') {
       setTab('community');
     }
+
+    setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('turfington_open_direct_chat_target', { detail: sellerTarget }));
+      } catch {}
+    }, 60);
   };
 
   const handleImageUpload = async (e, setImg, setPrev) => {
