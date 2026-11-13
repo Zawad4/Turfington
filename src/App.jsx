@@ -534,7 +534,7 @@ export default function App() {
                     sellerId = 'seller_' + sellerNameStr.toLowerCase().replace(/\s+/g, '_');
                   }
                   const priceStr = item.price != null ? `₹${item.price}` : '';
-                  const initialMsg = `Hi ${sellerNameStr}! I am interested in buying this product: ${item.name || item.title || 'Sports Gear'}${priceStr ? ` (${priceStr})` : ''}. Is this still available?`;
+                  const initialMsg = `Hi ${sellerNameStr}! I am interested in buying ${item.name || item.title || 'Sports Gear'}${priceStr ? ` (${priceStr})` : ''}. Is this available?`;
 
                   const sellerTarget = {
                     id: sellerId,

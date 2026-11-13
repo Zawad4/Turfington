@@ -3372,12 +3372,65 @@ export async function apiLikePost(postId, userId) {
   return { success: true };
 }
 
-const MOCK_MARKETPLACE_IDS = new Set(['mp_item_1', 'mp_item_2', 'mp_item_3', 'mp_item_4']);
+export const LEGACY_TEST_MARKETPLACE_IDS = new Set([
+  '1NBdT768IWIcoLcNf5AF',
+  'Tw8Bar5hXjxRgqksitgI',
+  'mp_1785920795218',
+  'mp_1793587081913',
+  'mp_1793697440958',
+  'mp_1793937770797',
+  'mp_1793955389534',
+  'mp_1793957557987',
+  'mp_item_1',
+  'mp_item_2',
+  'mp_item_3',
+  'mp_item_4'
+]);
+export const MOCK_MARKETPLACE_IDS = LEGACY_TEST_MARKETPLACE_IDS;
 const MOCK_SELLER_NAMES = new Set(['Kabir Verma', 'Rohan Sharma', 'Priya Iyer', 'Aditya Nair']);
+
+export function purgeLegacyMarketplaceItems() {
+  try {
+    const s = localStorage.getItem('turfington_marketplace_items');
+    if (s) {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter(item => 
+          item && typeof item === 'object' && item.id &&
+          !LEGACY_TEST_MARKETPLACE_IDS.has(item.id) &&
+          !MOCK_SELLER_NAMES.has(item.sellerName) &&
+          !MOCK_SELLER_NAMES.has(item.seller_name)
+        );
+        localStorage.setItem('turfington_marketplace_items', JSON.stringify(cleaned));
+      }
+    }
+  } catch {}
+}
 
 const INITIAL_MARKETPLACE_ITEMS = [];
 
 export async function apiFetchMarketplaceItems() {
+  purgeLegacyMarketplaceItems();
+
+  try {
+    const snap = await getDocs(collection(db, 'marketplace_items'));
+    if (!snap.empty) {
+      const dbItems = snap.docs.map(item => ({ id: item.id, ...item.data() }));
+      const cleanDbItems = dbItems.filter(item => 
+        item && typeof item === 'object' && item.id &&
+        !LEGACY_TEST_MARKETPLACE_IDS.has(item.id) &&
+        !MOCK_SELLER_NAMES.has(item.sellerName) &&
+        !MOCK_SELLER_NAMES.has(item.seller_name)
+      );
+      try {
+        localStorage.setItem('turfington_marketplace_items', JSON.stringify(cleanDbItems));
+      } catch {}
+      return cleanDbItems;
+    }
+  } catch (err) {
+    console.warn('apiFetchMarketplaceItems remote fetch warning:', err);
+  }
+
   let localItems = [];
   try {
     const s = localStorage.getItem('turfington_marketplace_items');
@@ -3389,42 +3442,12 @@ export async function apiFetchMarketplaceItems() {
     localItems = [];
   }
 
-  // Strictly filter out mock items
-  localItems = (localItems || []).filter(item => 
+  return (localItems || []).filter(item => 
     item && typeof item === 'object' && item.id &&
-    !MOCK_MARKETPLACE_IDS.has(item.id) &&
+    !LEGACY_TEST_MARKETPLACE_IDS.has(item.id) &&
     !MOCK_SELLER_NAMES.has(item.sellerName) &&
     !MOCK_SELLER_NAMES.has(item.seller_name)
   );
-
-  try {
-    const snap = await getDocs(collection(db, 'marketplace_items'));
-    if (!snap.empty) {
-      const dbItems = snap.docs.map(item => ({ id: item.id, ...item.data() }));
-      const cleanDbItems = dbItems.filter(item => 
-        item && typeof item === 'object' && item.id &&
-        !MOCK_MARKETPLACE_IDS.has(item.id) &&
-        !MOCK_SELLER_NAMES.has(item.sellerName) &&
-        !MOCK_SELLER_NAMES.has(item.seller_name)
-      );
-      const map = new Map();
-      localItems.forEach(item => {
-        if (item && item.id) map.set(item.id, item);
-      });
-      cleanDbItems.forEach(item => {
-        if (item && item.id) map.set(item.id, { ...(map.get(item.id) || {}), ...item });
-      });
-      const merged = Array.from(map.values());
-      try {
-        localStorage.setItem('turfington_marketplace_items', JSON.stringify(merged));
-      } catch {}
-      return merged;
-    }
-  } catch (err) {
-    console.warn('apiFetchMarketplaceItems remote fetch warning:', err);
-  }
-
-  return localItems;
 }
 
 /**
@@ -3484,34 +3507,10 @@ export function compressDataUrlOrFile(fileOrDataUrl, maxDim = 800, quality = 0.7
 export function apiSubscribeMarketplaceItems(callback) {
   if (typeof callback !== 'function') return () => {};
 
+  purgeLegacyMarketplaceItems();
+
   // 1. Initial cached/remote load
   apiFetchMarketplaceItems().then(items => callback(items));
-
-  // Auto-compress and sync any locally-listed gear to Firestore so phone can fetch them immediately!
-  try {
-    const localStr = localStorage.getItem('turfington_marketplace_items');
-    if (localStr) {
-      const localItems = JSON.parse(localStr);
-      if (Array.isArray(localItems) && localItems.length > 0) {
-        localItems.forEach(async (item) => {
-          if (item && item.id && !MOCK_MARKETPLACE_IDS.has(item.id)) {
-            let itemImg = item.image || item.image_url;
-            if (itemImg && itemImg.startsWith('data:image') && itemImg.length > 200000) {
-              itemImg = await compressDataUrlOrFile(itemImg, 800, 0.75);
-              item.image = itemImg;
-              item.image_url = itemImg;
-            }
-            await setDoc(doc(db, 'marketplace_items', item.id), {
-              ...item,
-              image: itemImg,
-              image_url: itemImg,
-              createdAt: serverTimestamp()
-            }, { merge: true }).catch(err => console.warn('Sync local item to firestore notice:', err));
-          }
-        });
-      }
-    }
-  } catch {}
 
   // 2. Window event listener
   const handleUpdate = () => {
@@ -3519,30 +3518,23 @@ export function apiSubscribeMarketplaceItems(callback) {
   };
   window.addEventListener('turfington_marketplace_updated', handleUpdate);
 
-  // 3. Firestore onSnapshot real-time listener
+  // 3. Firestore onSnapshot real-time listener (Firestore is authoritative)
   let unsubFirestore = null;
   try {
     unsubFirestore = onSnapshot(collection(db, 'marketplace_items'), (snap) => {
       const dbItems = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(item => item && item.id && !MOCK_MARKETPLACE_IDS.has(item.id));
+        .filter(item => 
+          item && item.id && 
+          !LEGACY_TEST_MARKETPLACE_IDS.has(item.id) &&
+          !MOCK_SELLER_NAMES.has(item.sellerName) &&
+          !MOCK_SELLER_NAMES.has(item.seller_name)
+        );
       
-      // Merge with any freshly added local items so they aren't lost during async sync
-      let mergedItems = dbItems;
       try {
-        const localStr = localStorage.getItem('turfington_marketplace_items');
-        if (localStr) {
-          const localParsed = JSON.parse(localStr);
-          if (Array.isArray(localParsed)) {
-            const map = new Map();
-            localParsed.forEach(it => { if (it && it.id) map.set(it.id, it); });
-            dbItems.forEach(it => { if (it && it.id) map.set(it.id, it); });
-            mergedItems = Array.from(map.values());
-          }
-        }
-        localStorage.setItem('turfington_marketplace_items', JSON.stringify(mergedItems));
+        localStorage.setItem('turfington_marketplace_items', JSON.stringify(dbItems));
       } catch {}
-      callback(mergedItems);
+      callback(dbItems);
     }, (err) => {
       console.warn('marketplace onSnapshot warning:', err);
     });

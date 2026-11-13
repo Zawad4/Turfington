@@ -26,6 +26,7 @@ import {
   apiCreateMarketplaceItem, 
   apiUpdateMarketplaceItem, 
   apiDeleteMarketplaceItem,
+  purgeLegacyMarketplaceItems,
   getInterconnectedAccounts,
   compressDataUrlOrFile
 } from '../services/db';
@@ -72,6 +73,7 @@ export default function Marketplace({
   const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
+    purgeLegacyMarketplaceItems();
     setIsLoading(true);
     const unsubscribe = apiSubscribeMarketplaceItems((items) => {
       if (Array.isArray(items)) {
@@ -172,7 +174,7 @@ export default function Marketplace({
     }
 
     const priceStr = p.price != null ? `₹${p.price}` : '';
-    const initialMsg = `Hi ${sellerNameStr}! I am interested in buying this product: ${p.name || p.title || 'Sports Gear'}${priceStr ? ` (${priceStr})` : ''}. Is this still available?`;
+    const initialMsg = `Hi ${sellerNameStr}! I am interested in buying ${p.name || p.title || 'Sports Gear'}${priceStr ? ` (${priceStr})` : ''}. Is this available?`;
 
     const sellerTarget = {
       id: sellerId,
