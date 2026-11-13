@@ -56,6 +56,7 @@ const Tournaments = lazyWithRetry(() => import('./pages/Tournaments'));
 const VenueManager = lazyWithRetry(() => import('./pages/VenueManager'));
 const Auth = lazyWithRetry(() => import('./pages/Auth'));
 const Community = lazyWithRetry(() => import('./pages/Community'));
+const AdminSecurity = lazyWithRetry(() => import('./pages/AdminSecurity'));
 
 /* ── Local Storage Helper ──────────────────────────────────── */
 const loadLocalState = (key, fallback) => {
@@ -77,7 +78,7 @@ const saveLocalState = (key, val) => {
    APP ROOT COMPONENT
    ════════════════════════════════════════════════════════════ */
 export default function App() {
-  const { user, authLoading, isOwner, login, logout, switchProfile, updateUser } = useAuth();
+  const { user, authLoading, isOwner, isAdmin, login, logout, switchProfile, updateUser } = useAuth();
 
   /* ── Navigation State ─────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState('landing');
@@ -278,12 +279,14 @@ export default function App() {
 
   /* ── Navigation Handlers ───────────────────────────────────── */
   useEffect(() => {
-    if (isOwner && (activeTab === 'discovery' || activeTab === 'dashboard')) {
+    if (isAdmin && activeTab === 'landing') {
+      setActiveTab('admin-panel');
+    } else if (isOwner && (activeTab === 'discovery' || activeTab === 'dashboard')) {
       setActiveTab('venue-manager');
-    } else if (!isOwner && activeTab === 'venue-manager') {
+    } else if (!isOwner && !isAdmin && (activeTab === 'venue-manager' || activeTab === 'admin-panel')) {
       setActiveTab('landing');
     }
-  }, [isOwner, activeTab]);
+  }, [isOwner, isAdmin, activeTab]);
 
   useEffect(() => {
     const handleTabNav = (e) => {
@@ -296,7 +299,11 @@ export default function App() {
   }, []);
 
   const handleNavClick = (tab) => {
-    const target = isOwner && (tab === 'discovery' || tab === 'dashboard') ? 'venue-manager' : tab;
+    const target = isAdmin
+      ? tab
+      : isOwner && (tab === 'discovery' || tab === 'dashboard')
+      ? 'venue-manager'
+      : tab;
     setNavHistory((prev) => (prev[prev.length - 1] === target ? prev : [...prev, target]));
     setActiveTab(target);
     window.scrollTo(0, 0);
@@ -307,11 +314,11 @@ export default function App() {
     if (navHistory.length > 1) {
       const nextHistory = [...navHistory];
       nextHistory.pop();
-      const prevTab = nextHistory[nextHistory.length - 1] || 'landing';
+      const prevTab = nextHistory[nextHistory.length - 1] || (isAdmin ? 'admin-panel' : 'landing');
       setNavHistory(nextHistory);
       setActiveTab(prevTab);
     } else {
-      setActiveTab('landing');
+      setActiveTab(isAdmin ? 'admin-panel' : 'landing');
     }
     window.scrollTo(0, 0);
   };
@@ -325,7 +332,11 @@ export default function App() {
       setJoinedMatches(loadLocalState(`turfington_joined_matches_${selectedProfile.id}`, []));
       setMatchRequests(loadLocalState(`turfington_match_requests_${selectedProfile.id}`, []));
     }
-    const targetTab = selectedProfile?.role === 'owner' ? 'venue-manager' : 'landing';
+    const targetTab = selectedProfile?.role === 'admin'
+      ? 'admin-panel'
+      : selectedProfile?.role === 'owner'
+      ? 'venue-manager'
+      : 'landing';
     setNavHistory((prev) => (prev[prev.length - 1] === targetTab ? prev : [...prev, targetTab]));
     setActiveTab(targetTab);
     window.scrollTo(0, 0);
@@ -394,7 +405,7 @@ export default function App() {
     setMatchRequests((prev) => prev.map((r) => (r.id === req.id ? { ...r, status: 'approved' } : r)));
   };
 
-  const navItems = NAV_ITEMS[isOwner ? 'OWNER' : 'ATHLETE'];
+  const navItems = NAV_ITEMS[isAdmin ? 'ADMIN' : isOwner ? 'OWNER' : 'ATHLETE'];
 
   /* ── Auth Screen Guard ─────────────────────────────────────── */
   if (authLoading) {
@@ -572,6 +583,13 @@ export default function App() {
             )}
             {activeTab === 'community' && <Community user={user} setTab={handleNavClick} />}
             {activeTab === 'tournaments' && <Tournaments role={user?.role} user={user} />}
+            {activeTab === 'admin-panel' && (
+              <AdminSecurity
+                user={user}
+                setTab={handleNavClick}
+                onOpenProfileSwitcher={() => setShowProfileSwitcher(true)}
+              />
+            )}
             {activeTab === 'venue-manager' && (
               <VenueManager
                 user={user}
@@ -651,6 +669,7 @@ export default function App() {
       {/* ── MOBILE BOTTOM TAB BAR ────────────────────────────── */}
       <MobileNav
         isOwner={isOwner}
+        isAdmin={isAdmin}
         activeTab={activeTab}
         onNavClick={handleNavClick}
         unreadMessageCount={unreadMessageCount}

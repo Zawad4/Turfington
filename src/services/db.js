@@ -318,6 +318,27 @@ export function calculateAndUpdateDailyStreak(user) {
   return user;
 }
 
+export const OFFICIAL_ADMIN_ACCOUNT = {
+  id: 'turfington_admin_official',
+  uid: 'turfington_admin_official',
+  firebase_uid: 'turfington_admin_official',
+  name: 'Turfington Support & Security',
+  full_name: 'Turfington Support & Security',
+  displayName: 'Turfington Support & Security',
+  email: 'admin@turfington.com',
+  role: 'admin',
+  is_admin: true,
+  is_verified: true,
+  badge: 'Support & Security Desk',
+  avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200',
+  avatarUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200',
+  avatar_url: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200',
+  sport: 'Platform Security & Verification',
+  bio: 'Official Turfington Customer Support & Verification Desk. We monitor activities and verify player & venue owner profiles.',
+  is_profile_complete: true,
+  phone: '+91 800-TURF-SEC'
+};
+
 export const CONNECTED_ACCOUNTS_KEY = 'turfington_connected_accounts';
 
 /**
@@ -374,6 +395,11 @@ export function getInterconnectedAccounts() {
       }
     }
   } catch {}
+
+  // 4. Always ensure the official Admin & Security account is available in interconnected accounts
+  if (!map.has('admin@turfington.com') && !map.has('turfington_admin_official')) {
+    map.set('admin@turfington.com', OFFICIAL_ADMIN_ACCOUNT);
+  }
 
   return Array.from(map.values());
 }
@@ -4603,4 +4629,185 @@ export async function apiDeleteTournament(tournamentId, userId) {
   }
 
   return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Admin & Security: User Verification & Platform Activity Monitoring
+// ─────────────────────────────────────────────────────────────
+
+export async function apiFetchAllUsersForAdmin() {
+  const userMap = new Map();
+
+  const normalizeAndAdd = (d) => {
+    if (!d) return;
+    const uid = d.uid || d.id || d.firebase_uid;
+    const email = (d.email || '').trim().toLowerCase();
+    if (!uid && !email) return;
+
+    // Exclude the admin account from the regular verification list
+    if (uid === 'turfington_admin_official' || email === 'admin@turfington.com') return;
+
+    const key = uid || email;
+    const existing = userMap.get(key) || {};
+
+    const name = d.full_name || d.displayName || d.name || (email ? email.split('@')[0] : 'Member');
+    const role = d.role === 'owner' ? 'owner' : (d.role || 'player');
+
+    userMap.set(key, {
+      id: uid || key,
+      uid: uid || key,
+      firebase_uid: d.firebase_uid || uid || key,
+      full_name: name,
+      displayName: name,
+      name: name,
+      email: d.email || '',
+      phone: d.phone || d.phoneNumber || '',
+      role: role,
+      avatar: d.avatar || d.avatarUrl || d.avatar_url || d.photoURL || '',
+      avatarUrl: d.avatarUrl || d.avatar || d.avatar_url || '',
+      sport: d.sport || (Array.isArray(d.sports_interests) ? d.sports_interests[0] : 'Multi-Sport'),
+      city: d.city || d.location || 'Chennai',
+      location: d.location || 'Chennai, India',
+      is_verified: !!(d.is_verified || existing.is_verified),
+      verified_at: d.verified_at || existing.verified_at || null,
+      is_suspended: !!(d.is_suspended || existing.is_suspended),
+      created_at: d.created_at || d.createdAt || existing.created_at || new Date().toISOString(),
+      ...existing,
+      ...d
+    });
+  };
+
+  // 1. Fetch from Firestore users collection
+  try {
+    const snapUsers = await getDocs(collection(db, 'users'));
+    snapUsers.docs.forEach(docSnap => {
+      normalizeAndAdd({ id: docSnap.id, ...docSnap.data() });
+    });
+  } catch (err) {
+    console.warn('apiFetchAllUsersForAdmin users error:', err);
+  }
+
+  // 2. Fetch from Firestore profiles collection
+  try {
+    const snapProfiles = await getDocs(collection(db, 'profiles'));
+    snapProfiles.docs.forEach(docSnap => {
+      normalizeAndAdd({ id: docSnap.id, ...docSnap.data() });
+    });
+  } catch (err) {
+    console.warn('apiFetchAllUsersForAdmin profiles error:', err);
+  }
+
+  // 3. Scan local connected accounts
+  try {
+    const connected = getInterconnectedAccounts();
+    if (Array.isArray(connected)) {
+      connected.forEach(normalizeAndAdd);
+    }
+  } catch {}
+
+  return Array.from(userMap.values()).sort((a, b) => {
+    // Show pending verification first, then sorted by name
+    if (a.is_verified !== b.is_verified) {
+      return a.is_verified ? 1 : -1;
+    }
+    return (a.full_name || '').localeCompare(b.full_name || '');
+  });
+}
+
+export async function apiToggleUserVerification(userId, isVerified) {
+  if (!userId) return false;
+  const now = new Date().toISOString();
+  const updateData = {
+    is_verified: !!isVerified,
+    verified_at: isVerified ? now : null
+  };
+
+  try {
+    await setDoc(doc(db, 'users', userId), updateData, { merge: true }).catch(() => {});
+    await setDoc(doc(db, 'profiles', userId), updateData, { merge: true }).catch(() => {});
+  } catch (e) {
+    console.warn('apiToggleUserVerification firestore notice:', e);
+  }
+
+  try {
+    const connected = getInterconnectedAccounts();
+    const updated = connected.map(acc => {
+      if (acc.id === userId || acc.uid === userId || acc.firebase_uid === userId || acc.email === userId) {
+        return { ...acc, ...updateData };
+      }
+      return acc;
+    });
+    localStorage.setItem(CONNECTED_ACCOUNTS_KEY, JSON.stringify(updated));
+
+    const curRaw = localStorage.getItem('turfington_active_user');
+    if (curRaw) {
+      const cur = JSON.parse(curRaw);
+      if (cur.id === userId || cur.uid === userId || cur.firebase_uid === userId || cur.email === userId) {
+        localStorage.setItem('turfington_active_user', JSON.stringify({ ...cur, ...updateData }));
+      }
+    }
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_user_verified', { detail: { userId, isVerified } }));
+  }
+
+  return true;
+}
+
+export async function apiToggleUserSuspension(userId, isSuspended) {
+  if (!userId) return false;
+  const now = new Date().toISOString();
+  const updateData = {
+    is_suspended: !!isSuspended,
+    suspended_at: isSuspended ? now : null
+  };
+
+  try {
+    await setDoc(doc(db, 'users', userId), updateData, { merge: true }).catch(() => {});
+    await setDoc(doc(db, 'profiles', userId), updateData, { merge: true }).catch(() => {});
+  } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('turfington_user_suspended', { detail: { userId, isSuspended } }));
+  }
+
+  return true;
+}
+
+export async function apiFetchAdminSecurityMetrics() {
+  const users = await apiFetchAllUsersForAdmin();
+  const totalUsers = users.length;
+  const verifiedUsers = users.filter(u => u.is_verified).length;
+  const playersCount = users.filter(u => u.role === 'player').length;
+  const ownersCount = users.filter(u => u.role === 'owner').length;
+
+  let totalVenues = 0;
+  try {
+    const snap = await getDocs(collection(db, 'venues')).catch(() => null);
+    totalVenues = snap?.size || 0;
+  } catch {}
+
+  let totalTournaments = 0;
+  try {
+    const snap = await getDocs(collection(db, 'tournaments')).catch(() => null);
+    totalTournaments = snap?.size || 0;
+  } catch {}
+
+  let totalListings = 0;
+  try {
+    const snap = await getDocs(collection(db, 'marketplace_items')).catch(() => null);
+    totalListings = snap?.size || 0;
+  } catch {}
+
+  return {
+    totalUsers,
+    verifiedUsers,
+    pendingUsers: totalUsers - verifiedUsers,
+    playersCount,
+    ownersCount,
+    totalVenues,
+    totalTournaments,
+    totalListings
+  };
 }

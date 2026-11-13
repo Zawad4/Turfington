@@ -625,7 +625,7 @@ export default function ProfileSwitcherModal({
                         <div className="relative flex-shrink-0">
                           <UserAvatar user={prof} className="w-10 h-10 text-sm" />
                           <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-black ${
-                            prof.role === 'owner' ? 'bg-amber-400' : 'bg-indigo-400'
+                            prof.role === 'admin' ? 'bg-purple-400' : prof.role === 'owner' ? 'bg-amber-400' : 'bg-indigo-400'
                           }`} />
                         </div>
 
@@ -635,11 +635,13 @@ export default function ProfileSwitcherModal({
                               {prof.full_name || 'Authenticated Member'}
                             </p>
                             <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                              prof.role === 'owner'
+                              prof.role === 'admin'
+                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/35'
+                                : prof.role === 'owner'
                                 ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
                                 : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/25'
                             }`}>
-                              {prof.role === 'owner' ? 'Venue Owner' : 'Player'}
+                              {prof.role === 'admin' ? '🛡️ Admin & Security' : prof.role === 'owner' ? 'Venue Owner' : 'Player'}
                             </span>
                           </div>
                           <p className="text-[10px] text-neutral-400 truncate mt-0.5">{prof.email}</p>
@@ -655,13 +657,15 @@ export default function ProfileSwitcherModal({
                           </div>
                         ) : (
                           <>
-                            <button
-                              onClick={(e) => handleRemoveAccount(e, prof)}
-                              title="Remove saved account"
-                              className="p-2 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 rounded-xl border border-rose-500/20 transition-all cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {prof.role !== 'admin' && (
+                              <button
+                                onClick={(e) => handleRemoveAccount(e, prof)}
+                                title="Remove saved account"
+                                className="p-2 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 rounded-xl border border-rose-500/20 transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
 
                             <button className="text-[10px] font-extrabold uppercase bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-xl border border-indigo-500/30 transition-all cursor-pointer shadow-md shadow-indigo-600/20">
                               Switch

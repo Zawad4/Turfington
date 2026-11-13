@@ -17,7 +17,8 @@ export const SPORTS = [
 
 export const USER_ROLES = {
   ATHLETE: 'player',
-  OWNER: 'owner'
+  OWNER: 'owner',
+  ADMIN: 'admin'
 };
 
 export const BOOKING_STATUS = {
@@ -48,6 +49,14 @@ export const NAV_ITEMS = {
     { id: 'venue-manager', label: 'Venues & Bookings', badge: 'Owner' },
     { id: 'marketplace', label: 'Marketplace' },
     { id: 'community', label: 'Messages' },
+    { id: 'tournaments', label: 'Tournaments' },
+    { id: 'profile', label: 'Profile' }
+  ],
+  ADMIN: [
+    { id: 'admin-panel', label: 'Admin & Security', badge: 'Staff' },
+    { id: 'community', label: 'Support Messages' },
+    { id: 'discovery', label: 'Venues' },
+    { id: 'marketplace', label: 'Marketplace' },
     { id: 'tournaments', label: 'Tournaments' },
     { id: 'profile', label: 'Profile' }
   ]

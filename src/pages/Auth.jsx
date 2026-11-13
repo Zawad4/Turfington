@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, User, AlertCircle, Loader2, ArrowRight, Building2, Sparkles, Check } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup, signInWithCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../services/firebase';
-import { apiFetchProfile, apiFetchProfileByEmail, apiCreateProfile, apiCheckUsernameUnique, apiGetEmailByUsername, apiUpdateProfile } from '../services/db';
+import { apiFetchProfile, apiFetchProfileByEmail, apiCreateProfile, apiCheckUsernameUnique, apiGetEmailByUsername, apiUpdateProfile, OFFICIAL_ADMIN_ACCOUNT } from '../services/db';
 import { ensureUserProfile } from '../services/chatService';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
@@ -372,6 +372,31 @@ export default function Auth({ onLogin }) {
             setLoading(false);
             return;
           }
+        }
+
+        // Dedicated Support & Security Admin Login
+        if (loginEmail === 'admin@turfington.com') {
+          try {
+            await signInWithEmailAndPassword(auth, loginEmail, password).catch(() => {});
+          } catch {}
+          let adminProf = await apiFetchProfile('turfington_admin_official').catch(() => null);
+          if (!adminProf) {
+            adminProf = await apiFetchProfileByEmail('admin@turfington.com').catch(() => null);
+          }
+          const finalAdmin = {
+            ...OFFICIAL_ADMIN_ACCOUNT,
+            ...(adminProf || {}),
+            role: 'admin',
+            is_admin: true,
+            is_verified: true
+          };
+          try {
+            localStorage.setItem('turfington_current_profile', JSON.stringify(finalAdmin));
+            localStorage.setItem('turfington_active_user', JSON.stringify(finalAdmin));
+          } catch {}
+          setLoading(false);
+          onLogin(finalAdmin);
+          return;
         }
 
         const cred = await signInWithEmailAndPassword(auth, loginEmail, password);

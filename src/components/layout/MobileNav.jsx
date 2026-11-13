@@ -6,17 +6,27 @@ import {
   MessageSquare,
   Trophy,
   LayoutDashboard,
-  Building2
+  Building2,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function MobileNav({
   isOwner,
+  isAdmin,
   activeTab,
   onNavClick,
   unreadMessageCount = 0,
   cartCount = 0
 }) {
-  const tabs = isOwner
+  const tabs = isAdmin
+    ? [
+        { id: 'admin-panel', Icon: ShieldCheck, label: 'Admin & Security' },
+        { id: 'community', Icon: MessageSquare, label: 'Support Messages' },
+        { id: 'discovery', Icon: Compass, label: 'Venues' },
+        { id: 'marketplace', Icon: ShoppingBag, label: 'Marketplace' },
+        { id: 'tournaments', Icon: Trophy, label: 'Tournaments' }
+      ]
+    : isOwner
     ? [
         { id: 'landing', Icon: HomeIcon, label: 'Home' },
         { id: 'venue-manager', Icon: Building2, label: 'Venues & Bookings' },
@@ -49,7 +59,9 @@ export default function MobileNav({
             aria-label={label}
             className={`relative p-2.5 sm:p-3 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer ${
               isActive
-                ? id === 'venue-manager'
+                ? id === 'admin-panel'
+                  ? 'bg-purple-600 text-white shadow-[0_0_16px_rgba(168,85,247,0.6)] scale-105'
+                  : id === 'venue-manager'
                   ? 'bg-violet-600 text-white shadow-[0_0_16px_rgba(139,92,246,0.6)] scale-105'
                   : 'bg-indigo-600 text-white shadow-[0_0_16px_rgba(99,102,241,0.6)] scale-105'
                 : 'text-neutral-400 hover:text-white hover:bg-white/5'

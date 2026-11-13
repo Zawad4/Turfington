@@ -135,12 +135,14 @@ export default function Header({
                     {user?.role && (
                       <span
                         className={`inline-flex mt-1.5 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${
-                          user.role === 'owner'
+                          user.role === 'admin'
+                            ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                            : user.role === 'owner'
                             ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
                             : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
                         }`}
                       >
-                        {user.role === 'owner' ? 'Venue Owner' : 'Player'}
+                        {user.role === 'admin' ? '🛡️ Admin & Security' : user.role === 'owner' ? 'Venue Owner' : 'Player'}
                       </span>
                     )}
                   </div>

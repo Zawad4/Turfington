@@ -134,12 +134,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   const isOwner = user?.role === 'owner';
+  const isAdmin = user?.role === 'admin' || user?.is_admin === true;
 
   const value = {
     user,
     firebaseUser,
     authLoading,
     isOwner,
+    isAdmin,
     login,
     logout,
     switchProfile,
