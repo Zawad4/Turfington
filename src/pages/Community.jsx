@@ -5,8 +5,9 @@ import {
   Zap, Star, Bell, BellRing, Check, CheckCheck, X, ChevronRight,
   Filter, Sparkles, Compass, MapPin, Activity, ArrowLeft,
   UserPlus, UserCheck, Radio, Circle, Pin, VolumeX, Volume2, Lock, ShieldCheck,
-  Camera, Upload, Image as ImageIcon
+  Camera, Upload, Image as ImageIcon, Trash2
 } from 'lucide-react';
+import { doc, deleteDoc } from 'firebase/firestore';
 import SportIcon from '../components/SportIcon';
 import ChatWindowEnhanced from '../components/ChatWindowEnhanced';
 import UserAvatar from '../components/UserAvatar';
@@ -29,7 +30,7 @@ import {
 } from '../services/chatService';
 import { apiFetchAthletes, apiSearchUsers, apiFollowUser, NPC_TEST_USER_IDS } from '../services/db';
 import { getLocalFollowing, toggleFollowUser } from '../services/followService';
-import { auth, setupPushNotifications } from '../services/firebase';
+import { auth, db, setupPushNotifications } from '../services/firebase';
 
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
   ? import.meta.env.VITE_API_URL
@@ -462,6 +463,25 @@ export default function Community({ user, setTab }) {
   const handleToggleMute = async (e, convId, currentStatus) => {
     e.stopPropagation();
     await toggleMuteConversation(currentUserId, convId, !currentStatus);
+  };
+
+  const handleDeleteConversation = async (e, convId) => {
+    e.stopPropagation();
+    if (!convId) return;
+    try {
+      setInboxItems(prev => prev.filter(i => (i.conversationId !== convId && i.id !== convId)));
+      setActiveChat(prev => (prev && (prev.conversationId === convId || prev.id === convId) ? null : prev));
+      if (currentUserId) {
+        const localKey = `turfington_inbox_${currentUserId}`;
+        const cached = JSON.parse(localStorage.getItem(localKey) || '[]');
+        const filtered = cached.filter(i => (i.conversationId !== convId && i.id !== convId));
+        localStorage.setItem(localKey, JSON.stringify(filtered));
+        localStorage.removeItem(`turfington_chat_messages_${convId}`);
+        await deleteDoc(doc(db, 'users', currentUserId, 'inbox', convId)).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('Error deleting conversation:', err);
+    }
   };
 
   // Start 1:1 Direct Message with an athlete
@@ -1300,6 +1320,13 @@ export default function Community({ user, setTab }) {
                               className="p-1 hover:text-neutral-300"
                             >
                               {item.isMuted ? <Volume2 className="w-2.5 h-2.5" /> : <VolumeX className="w-2.5 h-2.5" />}
+                            </button>
+                            <button
+                              title="Delete conversation"
+                              onClick={(e) => handleDeleteConversation(e, item.conversationId || item.id)}
+                              className="p-1 hover:text-rose-400"
+                            >
+                              <Trash2 className="w-2.5 h-2.5" />
                             </button>
                           </div>
                         </div>

@@ -797,23 +797,43 @@ export async function apiDeleteAccount(userOrIdentifier, confirmPassword = null)
       const qC1 = query(collection(db, 'conversations'), where('creatorUid', '==', uid));
       const sC1 = await getDocs(qC1).catch(() => null);
       if (sC1 && !sC1.empty) {
-        for (const d of sC1.docs) await deleteDoc(doc(db, 'conversations', d.id)).catch(() => {});
+        for (const d of sC1.docs) {
+          const members = d.data().members || d.data().participants || [];
+          for (const m of members) {
+            await deleteDoc(doc(db, 'users', m, 'inbox', d.id)).catch(() => {});
+          }
+          await deleteDoc(doc(db, 'conversations', d.id)).catch(() => {});
+        }
       }
-      const qC2 = query(collection(db, 'conversations'), where('created_by', '==', uid));
-      const sC2 = await getDocs(qC2).catch(() => null);
-      if (sC2 && !sC2.empty) {
-        for (const d of sC2.docs) await deleteDoc(doc(db, 'conversations', d.id)).catch(() => {});
-      }
-      // Remove from participant arrays in conversations
-      const qC3 = query(collection(db, 'conversations'), where('participants', 'array-contains', uid));
+
+      const qC3 = query(collection(db, 'conversations'), where('members', 'array-contains', uid));
       const sC3 = await getDocs(qC3).catch(() => null);
       if (sC3 && !sC3.empty) {
         for (const d of sC3.docs) {
-          await updateDoc(doc(db, 'conversations', d.id), {
-            participants: arrayRemove(uid),
-            members: arrayRemove(uid)
-          }).catch(() => {});
+          const data = d.data();
+          const members = data.members || data.participants || [];
+          if (data.type === 'direct' || d.id.startsWith('direct_')) {
+            for (const m of members) {
+              await deleteDoc(doc(db, 'users', m, 'inbox', d.id)).catch(() => {});
+            }
+            const msgSnap = await getDocs(collection(db, 'conversations', d.id, 'messages')).catch(() => null);
+            if (msgSnap && !msgSnap.empty) {
+              for (const m of msgSnap.docs) await deleteDoc(m.ref).catch(() => {});
+            }
+            await deleteDoc(doc(db, 'conversations', d.id)).catch(() => {});
+          } else {
+            await updateDoc(doc(db, 'conversations', d.id), {
+              participants: arrayRemove(uid),
+              members: arrayRemove(uid)
+            }).catch(() => {});
+          }
         }
+      }
+
+      // Purge this user's entire inbox
+      const uInbox = await getDocs(collection(db, 'users', uid, 'inbox')).catch(() => null);
+      if (uInbox && !uInbox.empty) {
+        for (const it of uInbox.docs) await deleteDoc(it.ref).catch(() => {});
       }
     }
 
@@ -2168,7 +2188,7 @@ const DEFAULT_TURFS = [];
 // Clean fresh start purge of all legacy data across browsers
 if (typeof window !== 'undefined') {
   try {
-    const purgeKey = 'turfington_global_fresh_start_v4';
+    const purgeKey = 'turfington_global_fresh_start_v5';
     if (!localStorage.getItem(purgeKey)) {
       const keysToClear = [
         'turfington_custom_venues',
@@ -2187,7 +2207,10 @@ if (typeof window !== 'undefined') {
         'turfington_liked_products',
         'turfington_venue_offers',
         'turfington_all_profiles',
-        'turfington_profiles'
+        'turfington_profiles',
+        'turfington_athletes_cache',
+        'turfington_target_chat_user',
+        'turfington_last_message_event'
       ];
       keysToClear.forEach(k => localStorage.removeItem(k));
       Object.keys(localStorage).forEach(k => {
@@ -2198,7 +2221,9 @@ if (typeof window !== 'undefined') {
           k.startsWith('turfington_player_reviews_') ||
           k.startsWith('turfington_match_requests_') ||
           k.startsWith('turfington_joined_matches_') ||
-          k.startsWith('turfington_saved_profiles')
+          k.startsWith('turfington_saved_profiles') ||
+          k.startsWith('turfington_inbox_') ||
+          k.startsWith('turfington_chat_messages_')
         ) {
           localStorage.removeItem(k);
         }

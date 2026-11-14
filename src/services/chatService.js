@@ -1348,7 +1348,11 @@ export function getLocalInboxWithDiscovery(uid) {
     };
 
     cached.forEach(item => {
-      const cid = item.conversationId || item.id;
+      const cid = item.conversationId || item.id || '';
+      const titleLower = String(item.title || item.name || '').toLowerCase();
+      if (cid.includes('oJTe3P6YLhPWTfmUHaWInRUGtHm2') || titleLower.includes('ayesha')) {
+        return;
+      }
       if (cid) convMap.set(cid, item);
     });
 
@@ -1358,6 +1362,10 @@ export function getLocalInboxWithDiscovery(uid) {
         const k = localStorage.key(i);
         if (k && k.startsWith('turfington_chat_messages_direct_')) {
           const convId = k.replace('turfington_chat_messages_', '');
+          if (convId.includes('oJTe3P6YLhPWTfmUHaWInRUGtHm2')) {
+            localStorage.removeItem(k);
+            continue;
+          }
           const parts = convId.replace('direct_', '').split('_');
           if (parts.includes(String(uid))) {
             const msgs = JSON.parse(localStorage.getItem(k) || '[]');
@@ -1370,6 +1378,10 @@ export function getLocalInboxWithDiscovery(uid) {
               const partnerName = partnerProfile?.full_name || partnerProfile?.displayName || partnerProfile?.name || 
                 ((lastMsg.senderUid !== uid && lastMsg.senderName) ? lastMsg.senderName : null) || 
                 (msgs.find(m => m.senderUid === otherUid)?.senderName) || 'Athlete';
+              if (partnerName.toLowerCase().includes('ayesha')) {
+                localStorage.removeItem(k);
+                continue;
+              }
               const partnerAvatar = partnerProfile?.avatarUrl || partnerProfile?.avatar || partnerProfile?.avatar_url ||
                 ((lastMsg.senderUid !== uid && lastMsg.senderAvatar) ? lastMsg.senderAvatar : null) || '';
 
@@ -1540,7 +1552,17 @@ export function subscribeToUserInbox(uid, callback) {
         return tB - tA;
       });
 
-      callback(mergedList);
+      const validMergedList = mergedList.filter(it => {
+        const id = it.conversationId || it.id || '';
+        const titleLower = String(it.title || it.name || '').toLowerCase().trim();
+        if (titleLower.includes('ayesha') || id.includes('oJTe3P6YLhPWTfmUHaWInRUGtHm2')) {
+          deleteDoc(doc(db, 'users', uid, 'inbox', id)).catch(() => {});
+          return false;
+        }
+        return true;
+      });
+
+      callback(validMergedList);
     }, (err) => {
       console.warn('subscribeToUserInbox notice (trying non-ordered query fallback):', err);
       try {

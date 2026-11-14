@@ -770,3 +770,4 @@ export default function AdminSecurity({ user, setTab, onOpenProfileSwitcher }) {
     </div>
   );
 }
+
