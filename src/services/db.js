@@ -4140,14 +4140,32 @@ export async function apiFetchHostedMatches() {
   let localMatches = [];
   try {
     const raw = localStorage.getItem('turfington_hosted_matches');
-    if (raw) localMatches = JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        // Strict guard: NEVER allow venue records into hosted matches
+        localMatches = parsed.filter(m => m && !String(m.id || '').startsWith('venue_') && m.isHosted !== false);
+      }
+    }
   } catch {}
 
   // Merge server, firestore, and local matches (server/firestore take precedence)
   const map = new Map();
-  localMatches.forEach(m => map.set(m.id, m));
-  firestoreMatches.forEach(m => map.set(m.id, m));
-  serverMatches.forEach(m => map.set(m.id, m));
+  localMatches.forEach(m => {
+    if (m && !String(m.id || '').startsWith('venue_') && m.isHosted !== false) {
+      map.set(m.id, m);
+    }
+  });
+  firestoreMatches.forEach(m => {
+    if (m && !String(m.id || '').startsWith('venue_') && m.isHosted !== false) {
+      map.set(m.id, m);
+    }
+  });
+  serverMatches.forEach(m => {
+    if (m && !String(m.id || '').startsWith('venue_') && m.isHosted !== false) {
+      map.set(m.id, m);
+    }
+  });
   const merged = Array.from(map.values());
 
   try {

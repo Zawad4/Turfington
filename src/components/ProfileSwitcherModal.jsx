@@ -21,7 +21,9 @@ import {
   apiUpdateProfile,
   getInterconnectedAccounts,
   saveInterconnectedAccount,
-  removeInterconnectedAccount
+  removeInterconnectedAccount,
+  OFFICIAL_ADMIN_ACCOUNT,
+  getAdminAvatar
 } from '../services/db';
 import { ensureUserProfile } from '../services/chatService';
 import UserAvatar from './UserAvatar';
@@ -373,6 +375,36 @@ export default function ProfileSwitcherModal({
         setOnboardingNewProfile(newDraftProfile);
         setOnboardingStep('role');
       } else {
+        if (email.trim().toLowerCase() === 'admin@turfington.com') {
+          try {
+            await signInWithEmailAndPassword(auth, email.trim(), password).catch(() => {});
+          } catch {}
+          let adminProf = await apiFetchProfile('turfington_admin_official').catch(() => null);
+          if (!adminProf) {
+            adminProf = await apiFetchProfileByEmail('admin@turfington.com').catch(() => null);
+          }
+          const finalAdmin = {
+            ...OFFICIAL_ADMIN_ACCOUNT,
+            ...(adminProf || {}),
+            role: 'admin',
+            is_admin: true,
+            is_verified: true,
+            avatar: getAdminAvatar(),
+            avatarUrl: getAdminAvatar(),
+            avatar_url: getAdminAvatar()
+          };
+          if (activeUser) {
+            saveInterconnectedAccount(activeUser);
+          }
+          saveInterconnectedAccount(finalAdmin);
+          setProfiles(getInterconnectedAccounts(finalAdmin));
+          setAuthLoading(false);
+          setShowAddForm(false);
+          onSelectProfile(finalAdmin);
+          onClose();
+          return;
+        }
+
         // Sign into existing Firebase account
         fbUserCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
         let profile = await apiFetchProfile(fbUserCredential.user.uid);

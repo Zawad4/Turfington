@@ -10,6 +10,10 @@ export default function UserAvatar({ user, className = "w-10 h-10 text-sm", alt 
   const [imgError, setImgError] = useState(false);
   
   let rawAvatar = user?.avatar_url || user?.avatar || user?.photoURL || '';
+  const isTargetAdmin = user?.role === 'admin' || user?.is_admin === true || (user?.email || '').toLowerCase() === 'admin@turfington.com';
+  if (!isTargetAdmin && rawAvatar && (rawAvatar.includes("circle cx='50' cy='50' r='48' fill='%2313131c'") || rawAvatar.includes('photo-1560250097-0b93528c311a'))) {
+    rawAvatar = '';
+  }
 
   // Look up real uploaded or Google profile photo from stored accounts/profiles
   if (!rawAvatar || rawAvatar.includes('dicebear.com') || rawAvatar.includes('bottts')) {

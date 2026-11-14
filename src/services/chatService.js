@@ -1462,13 +1462,39 @@ export function getLocalInboxWithDiscovery(uid) {
       return null;
     };
 
+    const deletedAccounts = JSON.parse(localStorage.getItem('turfington_deleted_accounts') || '[]');
+
     cached.forEach(item => {
       const cid = item.conversationId || item.id || '';
       const titleLower = String(item.title || item.name || '').toLowerCase();
-      if (cid.includes('oJTe3P6YLhPWTfmUHaWInRUGtHm2') || titleLower.includes('ayesha')) {
+      let otherUid = canonicalizeUid(item.otherUid || (cid.startsWith('direct_') ? getOtherUidFromDirectId(cid, uid) : null));
+      const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || 
+        cid.includes('admin') || 
+        titleLower.includes('turfington support');
+
+      if (
+        cid.includes('oJTe3P6YLhPWTfmUHaWInRUGtHm2') || 
+        cid.includes('admin_official_turfington') ||
+        titleLower.includes('ayesha') ||
+        (otherUid && deletedAccounts.includes(otherUid.toLowerCase())) ||
+        deletedAccounts.some(d => d.length > 2 && titleLower.includes(d))
+      ) {
         return;
       }
-      if (cid) convMap.set(cid, item);
+
+      const dedupeKey = isPartnerAdmin ? ADMIN_CANONICAL_UID : (otherUid && cid.startsWith('direct_') ? otherUid : cid);
+      if (dedupeKey) {
+        const canonicalConvId = isPartnerAdmin ? getDirectConversationId(uid, ADMIN_CANONICAL_UID) : cid;
+        convMap.set(dedupeKey, {
+          ...item,
+          id: canonicalConvId,
+          conversationId: canonicalConvId,
+          title: isPartnerAdmin ? 'Turfington Support & Security' : (item.title || item.name || 'Athlete'),
+          name: isPartnerAdmin ? 'Turfington Support & Security' : (item.title || item.name || 'Athlete'),
+          avatarUrl: isPartnerAdmin ? getAdminAvatar() : (item.avatarUrl || item.avatar || ''),
+          otherUid: isPartnerAdmin ? ADMIN_CANONICAL_UID : (otherUid || item.otherUid)
+        });
+      }
     });
 
     // Auto-discover any active direct chats stored locally where uid is a participant

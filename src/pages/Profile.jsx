@@ -262,17 +262,30 @@ export default function Profile({
   const [isSaving, setIsSaving] = useState(false);
 
   // Edit Profile States (Simple WhatsApp / Instagram Style)
-  const rawPlayerId = (typeof user?.player_id === 'string' && user.player_id)
+  const isActualAdmin = user?.role === 'admin' || user?.is_admin === true || (user?.email || '').toLowerCase() === 'admin@turfington.com' || role === 'admin';
+
+  let rawPlayerId = (typeof user?.player_id === 'string' && user.player_id)
     || (typeof user?.handle === 'string' && user.handle)
     || (typeof user?.username === 'string' && user.username)
     || '';
+  if (!isActualAdmin && (rawPlayerId === '@admin' || rawPlayerId === 'admin')) {
+    rawPlayerId = '';
+  }
+
   const initialPlayerId = rawPlayerId
     ? (rawPlayerId.startsWith('@') ? rawPlayerId : `@${rawPlayerId}`)
-    : `@${(user?.full_name || user?.name || user?.email?.split('@')[0] || 'player').toString().toLowerCase().replace(/[^a-z0-9]/g, '')}_${(user?.id || user?.firebase_uid || '9842').toString().slice(-4)}`;
+    : (isActualAdmin
+      ? '@admin'
+      : `@${(user?.full_name || user?.name || user?.email?.split('@')[0] || 'player').toString().toLowerCase().replace(/[^a-z0-9]/g, '')}_${(user?.id || user?.firebase_uid || '9842').toString().slice(-4)}`);
+
+  let initialAvatar = user?.avatar_url || user?.avatar || '';
+  if (!isActualAdmin && initialAvatar && (initialAvatar.includes("circle cx='50' cy='50' r='48' fill='%2313131c'") || initialAvatar.includes('photo-1560250097-0b93528c311a'))) {
+    initialAvatar = '';
+  }
 
   const [editName, setEditName] = useState(user?.full_name || user?.name || '');
   const [editTitle, setEditTitle] = useState(user?.title || (role === 'admin' ? 'Support & Security Desk' : role === 'owner' ? 'Venue Owner' : 'Sports Player'));
-  const [editAvatar, setEditAvatar] = useState(user?.avatar_url || user?.avatar || '');
+  const [editAvatar, setEditAvatar] = useState(initialAvatar);
   const [editPlayerId, setEditPlayerId] = useState(initialPlayerId);
   const [copiedId, setCopiedId] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -430,14 +443,23 @@ export default function Profile({
     if (user) {
       setEditName(user.full_name || user.name || '');
       setEditTitle(user.title || (role === 'admin' ? 'Support & Security Desk' : role === 'owner' ? 'Venue Owner' : 'Sports Player'));
-      setEditAvatar(user.avatar_url || user.avatar || '');
-      const pid = (typeof user.player_id === 'string' && user.player_id)
+      
+      let av = user.avatar_url || user.avatar || '';
+      if (!isActualAdmin && av && (av.includes("circle cx='50' cy='50' r='48' fill='%2313131c'") || av.includes('photo-1560250097-0b93528c311a'))) {
+        av = '';
+      }
+      setEditAvatar(av);
+
+      let pid = (typeof user.player_id === 'string' && user.player_id)
         || (typeof user.handle === 'string' && user.handle)
         || (typeof user.username === 'string' && user.username)
         || '';
+      if (!isActualAdmin && (pid === '@admin' || pid === 'admin')) {
+        pid = '';
+      }
       setEditPlayerId(pid ? (pid.startsWith('@') ? pid : `@${pid}`) : initialPlayerId);
     }
-  }, [user, role, initialPlayerId]);
+  }, [user, role, initialPlayerId, isActualAdmin]);
 
   const handleAvatarFileSelect = (e) => {
     const file = e.target.files?.[0];
@@ -546,9 +568,12 @@ export default function Profile({
     return String(i || 'Sports');
   });
 
-  const rawAvatar = (typeof user?.avatar_url === 'string' && user.avatar_url)
+  let rawAvatar = (typeof user?.avatar_url === 'string' && user.avatar_url)
     || (typeof user?.avatar === 'string' && user.avatar)
     || '';
+  if (!isActualAdmin && rawAvatar && (rawAvatar.includes("circle cx='50' cy='50' r='48' fill='%2313131c'") || rawAvatar.includes('photo-1560250097-0b93528c311a'))) {
+    rawAvatar = '';
+  }
   const isCustomPhoto = Boolean(
     rawAvatar
     && typeof rawAvatar === 'string'

@@ -194,22 +194,26 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
   const [mapPickedAddress, setMapPickedAddress] = useState('');
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
 
-  // Auto-resolve textual address if creating a new venue and we have initial GPS coords but no location text
+  // Auto-detect current exact GPS coordinates when creating a new venue
   useEffect(() => {
-    if (!venue && !form.location && initialCoords?.lat && initialCoords?.lng) {
-      fetchEnglishReverseGeocode(initialCoords.lat, initialCoords.lng, 14)
-        .then(geo => {
-          if (geo?.fullAddress) {
-            setForm(prev => {
-              if (!prev.location) {
-                return { ...prev, location: geo.fullAddress };
-              }
-              return prev;
-            });
-            setLocationFeedback(`✓ Location detected: ${geo.fullAddress}`);
-          }
-        })
-        .catch(() => {});
+    if (!venue) {
+      if (navigator.geolocation && !isGpsLocked) {
+        handleUseCurrentLocation();
+      } else if (!form.location && initialCoords?.lat && initialCoords?.lng) {
+        fetchEnglishReverseGeocode(initialCoords.lat, initialCoords.lng, 14)
+          .then(geo => {
+            if (geo?.fullAddress) {
+              setForm(prev => {
+                if (!prev.location) {
+                  return { ...prev, location: geo.fullAddress };
+                }
+                return prev;
+              });
+              setLocationFeedback(`✓ Location detected: ${geo.fullAddress}`);
+            }
+          })
+          .catch(() => {});
+      }
     }
   }, [venue]);
 
