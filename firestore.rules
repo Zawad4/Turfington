@@ -98,6 +98,32 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // ── 10. Reviews & Ratings ────────────────────────────────
+    match /reviews/{reviewId} {
+      allow read, write: if true;
+    }
+
+    match /player_reviews/{reviewId} {
+      allow read, write: if true;
+    }
+
+    // ── 11. Clubs, Hosted Matches & Misc ────────────────────
+    match /clubs/{clubId} {
+      allow read, write: if true;
+    }
+
+    match /hosted_matches/{matchId} {
+      allow read, write: if true;
+    }
+
+    match /reports/{reportId} {
+      allow read, write: if true;
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
     // Default Fallback: DENY all other access
     match /{allPaths=**} {
       allow read, write: if false;

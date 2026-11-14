@@ -2158,15 +2158,41 @@ export function resolveVenueImageUrl(pathOrUrl, bucket = 'venue-images') {
 
 const DEFAULT_TURFS = [];
 
-// Clean fresh start purge of legacy test venues & hosted matches
+// Clean fresh start purge of all legacy data across browsers
 if (typeof window !== 'undefined') {
   try {
-    const purgeKey = 'turfington_venues_fresh_start_v2';
+    const purgeKey = 'turfington_global_fresh_start_v4';
     if (!localStorage.getItem(purgeKey)) {
-      localStorage.removeItem('turfington_custom_venues');
-      localStorage.removeItem('turfington_hosted_matches');
+      const keysToClear = [
+        'turfington_custom_venues',
+        'turfington_hosted_matches',
+        'turfington_tournaments',
+        'turfington_marketplace_items',
+        'turfington_bookings',
+        'turfington_user_bookings',
+        'turfington_connected_accounts',
+        'turfington_user',
+        'turfington_active_user',
+        'turfington_current_profile',
+        'turfington_posts',
+        'turfington_stories',
+        'turfington_cart',
+        'turfington_liked_products',
+        'turfington_venue_offers',
+        'turfington_all_profiles',
+        'turfington_profiles'
+      ];
+      keysToClear.forEach(k => localStorage.removeItem(k));
       Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('turfington_venue_slots_') || k.startsWith('turfington_owner_venues_')) {
+        if (
+          k.startsWith('turfington_venue_slots_') || 
+          k.startsWith('turfington_owner_venues_') ||
+          k.startsWith('turfington_user_bookings_') ||
+          k.startsWith('turfington_player_reviews_') ||
+          k.startsWith('turfington_match_requests_') ||
+          k.startsWith('turfington_joined_matches_') ||
+          k.startsWith('turfington_saved_profiles')
+        ) {
           localStorage.removeItem(k);
         }
       });
