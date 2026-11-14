@@ -18,6 +18,10 @@ import {
   leaveCommunityGroup,
   getOrCreateDirectConversation,
   getDirectConversationId,
+  ADMIN_CANONICAL_UID,
+  canonicalizeUid,
+  getOtherUidFromDirectId,
+  parseDirectConversationUids,
   createCommunityGroup,
   togglePinConversation,
   toggleMuteConversation,
@@ -405,19 +409,22 @@ export default function Community({ user, setTab }) {
 
   const handleSelectChat = (chat) => {
     if (!chat) return;
-    const convId = chat.conversationId || chat.groupId || chat.id;
+    let convId = chat.conversationId || chat.groupId || chat.id;
     const isGrp = chat.type === 'group' || (!chat.type && !!chat.groupId);
     const isMember = isGrp ? joinedGroupIds.has(convId) : true;
     const inboxEntry = inboxItems.find(i => (i.conversationId === convId || i.id === convId));
 
-    let otherUid = chat.otherUid || inboxEntry?.otherUid;
+    let otherUid = canonicalizeUid(chat.otherUid || inboxEntry?.otherUid);
     if (!otherUid && convId && convId.startsWith('direct_')) {
-      const parts = convId.replace('direct_', '').split('_');
-      otherUid = parts.find(p => p !== currentUserId) || null;
+      otherUid = getOtherUidFromDirectId(convId, currentUserId);
+    }
+    if (!isGrp && otherUid) {
+      convId = getDirectConversationId(currentUserId, otherUid);
     }
 
-    const partnerName = chat.title || chat.name || chat.groupName || inboxEntry?.title || inboxEntry?.name || 'Athlete';
-    const partnerAvatar = isGrp ? getGroupImage(chat) : (chat.avatarUrl || chat.avatar || inboxEntry?.avatarUrl || inboxEntry?.avatar || '');
+    const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID;
+    const partnerName = isPartnerAdmin ? 'Turfington Support & Security' : (chat.title || chat.name || chat.groupName || inboxEntry?.title || inboxEntry?.name || 'Athlete');
+    const partnerAvatar = isGrp ? getGroupImage(chat) : (isPartnerAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (chat.avatarUrl || chat.avatar || inboxEntry?.avatarUrl || inboxEntry?.avatar || ''));
 
     const formattedChat = {
       ...chat,
@@ -429,7 +436,7 @@ export default function Community({ user, setTab }) {
       title: partnerName,
       avatar: partnerAvatar,
       avatarUrl: partnerAvatar,
-      otherUid,
+      otherUid: isPartnerAdmin ? ADMIN_CANONICAL_UID : otherUid,
       participants: chat.participants || (otherUid ? [currentUserId, otherUid] : [currentUserId]),
       isMember,
       isPinned: inboxEntry?.isPinned || false,
@@ -469,15 +476,44 @@ export default function Community({ user, setTab }) {
     e.stopPropagation();
     if (!convId) return;
     try {
-      setInboxItems(prev => prev.filter(i => (i.conversationId !== convId && i.id !== convId)));
-      setActiveChat(prev => (prev && (prev.conversationId === convId || prev.id === convId) ? null : prev));
+      const isDirect = convId.startsWith('direct_');
+      const otherUid = isDirect ? getOtherUidFromDirectId(convId, currentUserId) : null;
+      const isAdminConv = isDirect && (otherUid === ADMIN_CANONICAL_UID || convId.includes('admin'));
+
+      setInboxItems(prev => prev.filter(i => {
+        const id = i.conversationId || i.id;
+        if (id === convId) return false;
+        if (isAdminConv && (id.includes('admin') || i.otherUid === ADMIN_CANONICAL_UID)) return false;
+        return true;
+      }));
+      setActiveChat(prev => {
+        if (!prev) return null;
+        const pId = prev.conversationId || prev.id;
+        if (pId === convId || (isAdminConv && (pId.includes('admin') || prev.otherUid === ADMIN_CANONICAL_UID))) return null;
+        return prev;
+      });
+
       if (currentUserId) {
         const localKey = `turfington_inbox_${currentUserId}`;
         const cached = JSON.parse(localStorage.getItem(localKey) || '[]');
-        const filtered = cached.filter(i => (i.conversationId !== convId && i.id !== convId));
+        const filtered = cached.filter(i => {
+          const id = i.conversationId || i.id;
+          if (id === convId) return false;
+          if (isAdminConv && (id.includes('admin') || i.otherUid === ADMIN_CANONICAL_UID)) return false;
+          return true;
+        });
         localStorage.setItem(localKey, JSON.stringify(filtered));
         localStorage.removeItem(`turfington_chat_messages_${convId}`);
+        if (isAdminConv) {
+          localStorage.removeItem(`turfington_chat_messages_${convId.replace('turfington_admin_official', 'admin_official_turfington')}`);
+          localStorage.removeItem(`turfington_chat_messages_${convId.replace('admin_official_turfington', 'turfington_admin_official')}`);
+          await deleteDoc(doc(db, 'users', currentUserId, 'inbox', `direct_${currentUserId}_admin_official_turfington`)).catch(() => {});
+          await deleteDoc(doc(db, 'users', currentUserId, 'inbox', `direct_admin_official_turfington_${currentUserId}`)).catch(() => {});
+          await deleteDoc(doc(db, 'conversations', `direct_${currentUserId}_admin_official_turfington`)).catch(() => {});
+          await deleteDoc(doc(db, 'conversations', `direct_admin_official_turfington_${currentUserId}`)).catch(() => {});
+        }
         await deleteDoc(doc(db, 'users', currentUserId, 'inbox', convId)).catch(() => {});
+        await deleteDoc(doc(db, 'conversations', convId)).catch(() => {});
       }
     } catch (err) {
       console.warn('Error deleting conversation:', err);
@@ -492,7 +528,7 @@ export default function Community({ user, setTab }) {
     setShowNewChatModal(false);
 
     try {
-      const athleteId = athlete.id || athlete.uid || athlete.firebase_uid;
+      const athleteId = canonicalizeUid(athlete.id || athlete.uid || athlete.firebase_uid);
       if (!athleteId) return;
 
       const reqKey = `${athleteId}_${athlete.productName || athlete.title || athlete.name || ''}`;
@@ -502,8 +538,9 @@ export default function Community({ user, setTab }) {
       lastDirectTargetKeyRef.current = reqKey;
       lastDirectTargetTimeRef.current = Date.now();
 
-      const athleteName = athlete.displayName || athlete.full_name || athlete.name || 'Athlete';
-      const athleteAvatar = athlete.avatarUrl || athlete.avatar || athlete.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${athleteId}`;
+      const isPartnerAdmin = athleteId === ADMIN_CANONICAL_UID || (athlete.email || '').toLowerCase() === 'admin@turfington.com' || (athlete.name || '').toLowerCase().includes('turfington support');
+      const athleteName = isPartnerAdmin ? 'Turfington Support & Security' : (athlete.displayName || athlete.full_name || athlete.name || 'Athlete');
+      const athleteAvatar = isPartnerAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (athlete.avatarUrl || athlete.avatar || athlete.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${athleteId}`);
 
       const me = {
         id: currentUserId,
@@ -520,7 +557,7 @@ export default function Community({ user, setTab }) {
       // Clear initialMessage on the incoming athlete object to prevent duplicate sending
       athlete.initialMessage = null;
 
-      const convId = athlete.conversationId || (athlete.id && athlete.id.startsWith('direct_') ? athlete.id : getDirectConversationId(currentUserId, athleteId));
+      const convId = getDirectConversationId(currentUserId, athleteId);
 
       const formatted = {
         id: convId,
@@ -696,7 +733,7 @@ export default function Community({ user, setTab }) {
   }, [communityGroups, selectedSport, searchQuery, joinedGroupIds]);
 
   const filteredDirect = useMemo(() => {
-    return inboxItems.filter(item => {
+    const rawDirect = inboxItems.filter(item => {
       const isDirect = item.type === 'direct' || String(item.conversationId || item.id || '').startsWith('direct_');
       if (!isDirect) return false;
       if (searchQuery.trim()) {
@@ -707,7 +744,50 @@ export default function Community({ user, setTab }) {
       }
       return true;
     });
-  }, [inboxItems, searchQuery]);
+
+    // Deduplicate by canonical partner UID so NO user ever sees 2 conversation threads with the same person!
+    const partnerMap = new Map();
+    rawDirect.forEach(item => {
+      let otherUid = item.otherUid;
+      const convId = item.conversationId || item.id || '';
+      if (!otherUid && convId.startsWith('direct_')) {
+        otherUid = getOtherUidFromDirectId(convId, currentUserId);
+      }
+      otherUid = canonicalizeUid(otherUid);
+      
+      const isOfficialAdmin = otherUid === ADMIN_CANONICAL_UID || 
+                              convId.includes('admin') || 
+                              (item.title || item.name || '').toLowerCase().includes('turfington support');
+
+      const partnerId = isOfficialAdmin ? ADMIN_CANONICAL_UID : (otherUid || convId);
+      const canonicalConvId = isOfficialAdmin 
+        ? getDirectConversationId(currentUserId, ADMIN_CANONICAL_UID) 
+        : (otherUid ? getDirectConversationId(currentUserId, otherUid) : convId);
+
+      const existing = partnerMap.get(partnerId);
+      const standardizedItem = {
+        ...item,
+        conversationId: canonicalConvId,
+        id: canonicalConvId,
+        title: isOfficialAdmin ? 'Turfington Support & Security' : (item.title || item.name || 'Athlete'),
+        name: isOfficialAdmin ? 'Turfington Support & Security' : (item.title || item.name || 'Athlete'),
+        otherUid: partnerId,
+        avatarUrl: isOfficialAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (item.avatarUrl || item.avatar || '')
+      };
+
+      if (!existing) {
+        partnerMap.set(partnerId, standardizedItem);
+      } else {
+        const tExisting = new Date(existing.updatedAt || existing.lastMessageTimestamp || 0).getTime();
+        const tNew = new Date(item.updatedAt || item.lastMessageTimestamp || 0).getTime();
+        if (tNew >= tExisting) {
+          partnerMap.set(partnerId, { ...existing, ...standardizedItem });
+        }
+      }
+    });
+
+    return Array.from(partnerMap.values());
+  }, [inboxItems, searchQuery, currentUserId]);
 
   const isOwnerUser = (u) => {
     if (!u) return false;
@@ -1199,9 +1279,9 @@ export default function Community({ user, setTab }) {
 
                     // Resolve partner details for direct messages with full fallbacks
                     const isDirect = item.type === 'direct' || item.conversationId?.startsWith('direct_');
-                    const otherUid = item.otherUid || (isDirect
-                      ? item.conversationId.replace('direct_', '').split('_').find(p => p !== currentUserId)
-                      : null);
+                    const otherUid = canonicalizeUid(item.otherUid || (isDirect
+                      ? getOtherUidFromDirectId(item.conversationId, currentUserId)
+                      : null));
 
                     const matchedAthlete = isDirect
                       ? athletes.find(a => a.id === otherUid || a.uid === otherUid || a.firebase_uid === otherUid)

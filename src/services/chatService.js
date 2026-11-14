@@ -33,6 +33,95 @@ const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && impor
   ? import.meta.env.VITE_API_URL
   : (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.PROD ? '' : 'http://localhost:5000');
 
+export const ADMIN_CANONICAL_UID = 'turfington_admin_official';
+
+/**
+ * Standardize any admin UID variant to the canonical admin ID
+ */
+export function canonicalizeUid(uid) {
+  if (!uid) return '';
+  const s = String(uid).trim();
+  const lower = s.toLowerCase();
+  if (
+    lower === 'admin' ||
+    lower === 'admin_official' ||
+    lower === 'admin_official_turfington' ||
+    lower === 'admin@turfington.com' ||
+    lower === 'turfington_admin' ||
+    lower === 'turfington_admin_official'
+  ) {
+    return ADMIN_CANONICAL_UID;
+  }
+  return s;
+}
+
+/**
+ * Robust extractor for the other UID in a direct conversation ID (direct_{uid1}_{uid2})
+ * Handles UIDs that contain underscores (such as turfington_admin_official).
+ */
+export function getOtherUidFromDirectId(convId, myUid = null) {
+  if (!convId || !convId.startsWith('direct_')) return null;
+  const raw = convId.replace('direct_', '');
+  const cleanMyUid = canonicalizeUid(myUid);
+
+  // If one participant is admin
+  const hasAdmin = raw.includes('admin') || raw.includes('turfington_admin_official') || raw.includes('admin_official_turfington');
+  if (hasAdmin) {
+    if (cleanMyUid === ADMIN_CANONICAL_UID) {
+      const other = raw
+        .replace('turfington_admin_official', '')
+        .replace('admin_official_turfington', '')
+        .replace('admin_official', '')
+        .replace('admin', '')
+        .replace(/^_+|_+$/g, '');
+      return canonicalizeUid(other) || null;
+    } else {
+      return ADMIN_CANONICAL_UID;
+    }
+  }
+
+  // If myUid is provided, check prefix or suffix
+  if (cleanMyUid) {
+    if (raw.startsWith(cleanMyUid + '_')) {
+      return canonicalizeUid(raw.slice(cleanMyUid.length + 1));
+    }
+    if (raw.endsWith('_' + cleanMyUid)) {
+      return canonicalizeUid(raw.slice(0, raw.length - cleanMyUid.length - 1));
+    }
+  }
+
+  // Generic fallback if standard 2 parts
+  const parts = raw.split('_');
+  if (parts.length === 2) {
+    return cleanMyUid ? (parts[0] === cleanMyUid ? canonicalizeUid(parts[1]) : canonicalizeUid(parts[0])) : canonicalizeUid(parts[0]);
+  }
+  return parts.find(p => canonicalizeUid(p) !== cleanMyUid) || null;
+}
+
+/**
+ * Returns [uid1, uid2] from direct_{uid1}_{uid2}
+ */
+export function parseDirectConversationUids(convId, knownUid = null) {
+  if (!convId || !convId.startsWith('direct_')) return [];
+  const other = getOtherUidFromDirectId(convId, knownUid);
+  const me = canonicalizeUid(knownUid);
+  if (me && other) {
+    return [me, other];
+  }
+  const raw = convId.replace('direct_', '');
+  if (raw.includes('admin') || raw.includes('turfington_admin_official') || raw.includes('admin_official_turfington')) {
+    const userPart = raw
+      .replace('turfington_admin_official', '')
+      .replace('admin_official_turfington', '')
+      .replace('admin_official', '')
+      .replace('admin', '')
+      .replace(/^_+|_+$/g, '');
+    return [canonicalizeUid(userPart), ADMIN_CANONICAL_UID].filter(Boolean);
+  }
+  const parts = raw.split('_');
+  return parts.map(canonicalizeUid).filter(Boolean);
+}
+
 // ─────────────────────────────────────────────────────────────
 // 0. Indestructible Local & Real-time Persistent Message Store
 // ─────────────────────────────────────────────────────────────
@@ -43,16 +132,21 @@ const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && impor
 export function getLocalMessages(conversationId) {
   if (!conversationId) return [];
   try {
-    const key = `turfington_chat_messages_${conversationId}`;
+    let targetId = conversationId;
+    if (conversationId.includes('admin_official_turfington')) {
+      targetId = conversationId.replace('admin_official_turfington', 'turfington_admin_official');
+    }
+
+    const key = `turfington_chat_messages_${targetId}`;
     let raw = localStorage.getItem(key);
     
-    // Robust fallback: For direct conversations, check canonical sorted key and reversed key
-    if ((!raw || raw === '[]') && conversationId.startsWith('direct_')) {
-      const parts = conversationId.replace('direct_', '').split('_');
-      if (parts.length >= 2) {
-        const sortedKey = `turfington_chat_messages_direct_${[...parts].sort().join('_')}`;
-        const reversedKey = `turfington_chat_messages_direct_${parts[1]}_${parts[0]}`;
-        raw = localStorage.getItem(sortedKey) || localStorage.getItem(reversedKey);
+    // Fallback: Check legacy admin key if exists and migrate
+    if ((!raw || raw === '[]') && targetId.includes('turfington_admin_official')) {
+      const legacyKey = `turfington_chat_messages_${targetId.replace('turfington_admin_official', 'admin_official_turfington')}`;
+      raw = localStorage.getItem(legacyKey);
+      if (raw && raw !== '[]') {
+        localStorage.setItem(key, raw);
+        localStorage.removeItem(legacyKey);
       }
     }
 
@@ -82,8 +176,13 @@ function parseMsgTime(m) {
 export function saveLocalMessages(conversationId, newMessages) {
   if (!conversationId || !Array.isArray(newMessages)) return [];
   try {
-    const key = `turfington_chat_messages_${conversationId}`;
-    const existing = getLocalMessages(conversationId);
+    let targetId = conversationId;
+    if (conversationId.includes('admin_official_turfington')) {
+      targetId = conversationId.replace('admin_official_turfington', 'turfington_admin_official');
+    }
+
+    const key = `turfington_chat_messages_${targetId}`;
+    const existing = getLocalMessages(targetId);
     const map = new Map();
 
     const normalizeMessage = (m) => {
@@ -159,15 +258,10 @@ export function saveLocalMessages(conversationId, newMessages) {
 
     localStorage.setItem(key, JSON.stringify(deduped));
 
-    // Mirror to canonical sorted key for direct chats
-    if (conversationId.startsWith('direct_')) {
-      const parts = conversationId.replace('direct_', '').split('_');
-      if (parts.length >= 2) {
-        const sortedKey = `turfington_chat_messages_direct_${[...parts].sort().join('_')}`;
-        if (sortedKey !== key) {
-          localStorage.setItem(sortedKey, JSON.stringify(deduped));
-        }
-      }
+    // Clean up corrupted legacy admin key if present
+    if (targetId.includes('turfington_admin_official')) {
+      const legacyKey = `turfington_chat_messages_${targetId.replace('turfington_admin_official', 'admin_official_turfington')}`;
+      try { localStorage.removeItem(legacyKey); } catch {}
     }
 
     return deduped;
@@ -278,7 +372,9 @@ export async function ensureUserProfile(user) {
  * Get deterministic conversation ID between two UIDs to prevent duplicates
  */
 export function getDirectConversationId(uid1, uid2) {
-  const sorted = [String(uid1), String(uid2)].sort();
+  const c1 = canonicalizeUid(uid1);
+  const c2 = canonicalizeUid(uid2);
+  const sorted = [c1, c2].sort();
   return `direct_${sorted[0]}_${sorted[1]}`;
 }
 
@@ -286,8 +382,8 @@ export function getDirectConversationId(uid1, uid2) {
  * Get or create a direct conversation using atomic batch write
  */
 export async function getOrCreateDirectConversation(currentUser, targetUser) {
-  const currentUid = currentUser?.uid || currentUser?.id || currentUser?.firebase_uid;
-  const targetUid = targetUser?.uid || targetUser?.id || targetUser?.firebase_uid;
+  const currentUid = canonicalizeUid(currentUser?.uid || currentUser?.id || currentUser?.firebase_uid);
+  const targetUid = canonicalizeUid(targetUser?.uid || targetUser?.id || targetUser?.firebase_uid);
   
   if (!currentUid || !targetUid) throw new Error('Both users must have valid UIDs');
 
@@ -298,10 +394,13 @@ export async function getOrCreateDirectConversation(currentUser, targetUser) {
   const conversationId = getDirectConversationId(currentUid, targetUid);
   const convRef = doc(db, 'conversations', conversationId);
 
-  const currentName = currentUser?.displayName || currentUser?.full_name || currentUser?.name || 'Athlete';
-  const targetName = targetUser?.displayName || targetUser?.full_name || targetUser?.name || 'Athlete';
-  const currentAvatar = currentUser?.avatarUrl || currentUser?.avatar || currentUser?.avatar_url || '';
-  const targetAvatar = targetUser?.avatarUrl || targetUser?.avatar || targetUser?.avatar_url || '';
+  const isCurrentAdmin = currentUid === ADMIN_CANONICAL_UID;
+  const isTargetAdmin = targetUid === ADMIN_CANONICAL_UID;
+
+  const currentName = isCurrentAdmin ? 'Turfington Support & Security' : (currentUser?.displayName || currentUser?.full_name || currentUser?.name || 'Athlete');
+  const targetName = isTargetAdmin ? 'Turfington Support & Security' : (targetUser?.displayName || targetUser?.full_name || targetUser?.name || 'Athlete');
+  const currentAvatar = isCurrentAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (currentUser?.avatarUrl || currentUser?.avatar || currentUser?.avatar_url || '');
+  const targetAvatar = isTargetAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (targetUser?.avatarUrl || targetUser?.avatar || targetUser?.avatar_url || '');
 
   // 1. Synchronously cache in local storage for BOTH users for instant offline & cross-profile access
   try {
@@ -874,14 +973,17 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
   appendLocalMessage(conversationId, localMessageDoc);
 
   // 3. Resolve recipient UID and details for direct messaging
-  let recipientUid = options.recipientUid;
+  let recipientUid = options.recipientUid ? canonicalizeUid(options.recipientUid) : null;
   if (!recipientUid && conversationId.startsWith('direct_')) {
-    const parts = conversationId.replace('direct_', '').split('_');
-    recipientUid = parts.find(p => p !== senderUid) || null;
+    recipientUid = getOtherUidFromDirectId(conversationId, senderUid);
   }
   let recipientName = options.recipientName;
   let recipientAvatar = options.recipientAvatar;
-  if ((!recipientName || recipientName === 'Athlete') && recipientUid) {
+
+  if (recipientUid === ADMIN_CANONICAL_UID) {
+    recipientName = 'Turfington Support & Security';
+    recipientAvatar = 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200';
+  } else if ((!recipientName || recipientName === 'Athlete') && recipientUid) {
     try {
       const allAthletes = JSON.parse(localStorage.getItem('turfington_athletes_cache') || '[]');
       const found = allAthletes.find(a => a.id === recipientUid || a.uid === recipientUid || a.firebase_uid === recipientUid);
@@ -1034,12 +1136,12 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
     const messageRef = doc(db, 'conversations', conversationId, 'messages', messageId);
     const convRef = doc(db, 'conversations', conversationId);
 
-    let members = [senderUid];
-    if (recipientUid) members.push(recipientUid);
+    let members = [canonicalizeUid(senderUid)];
+    if (recipientUid) members.push(canonicalizeUid(recipientUid));
 
     if (isDirect) {
-      const parts = conversationId.replace('direct_', '').split('_');
-      members = Array.from(new Set([...members, ...parts])).filter(Boolean);
+      const uids = parseDirectConversationUids(conversationId, senderUid);
+      members = Array.from(new Set([...members, ...uids])).filter(Boolean);
     } else {
       // Group: resolve all group members across Firestore & local cache
       try {
@@ -1361,52 +1463,80 @@ export function getLocalInboxWithDiscovery(uid) {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith('turfington_chat_messages_direct_')) {
-          const convId = k.replace('turfington_chat_messages_', '');
+          let convId = k.replace('turfington_chat_messages_', '');
           if (convId.includes('oJTe3P6YLhPWTfmUHaWInRUGtHm2')) {
             localStorage.removeItem(k);
             continue;
           }
-          const parts = convId.replace('direct_', '').split('_');
-          if (parts.includes(String(uid))) {
-            const msgs = JSON.parse(localStorage.getItem(k) || '[]');
+
+          // Migrate legacy corrupted admin conversation keys to canonical key
+          if (convId.includes('admin_official_turfington')) {
+            const canonicalConvId = convId.replace('admin_official_turfington', 'turfington_admin_official');
+            try {
+              const legacyMsgs = JSON.parse(localStorage.getItem(k) || '[]');
+              if (legacyMsgs.length > 0) {
+                saveLocalMessages(canonicalConvId, legacyMsgs);
+              }
+              localStorage.removeItem(k);
+            } catch {}
+            convId = canonicalConvId;
+          }
+
+          const otherUid = getOtherUidFromDirectId(convId, uid);
+          if (convId.includes(String(uid)) || otherUid === String(uid)) {
+            const msgs = JSON.parse(localStorage.getItem(`turfington_chat_messages_${convId}`) || '[]');
             if (msgs.length > 0) {
               const lastMsg = msgs[msgs.length - 1];
-              const otherUid = parts.find(p => p !== String(uid)) || 'athlete';
               const partnerProfile = findUserProfile(otherUid);
-              const existing = convMap.get(convId);
               
-              const partnerName = partnerProfile?.full_name || partnerProfile?.displayName || partnerProfile?.name || 
-                ((lastMsg.senderUid !== uid && lastMsg.senderName) ? lastMsg.senderName : null) || 
-                (msgs.find(m => m.senderUid === otherUid)?.senderName) || 'Athlete';
+              const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || convId.includes('turfington_admin_official');
+              const partnerName = isPartnerAdmin
+                ? 'Turfington Support & Security'
+                : (partnerProfile?.full_name || partnerProfile?.displayName || partnerProfile?.name || 
+                  ((lastMsg.senderUid !== uid && lastMsg.senderName) ? lastMsg.senderName : null) || 
+                  (msgs.find(m => m.senderUid === otherUid)?.senderName) || 'Athlete');
+
               if (partnerName.toLowerCase().includes('ayesha')) {
                 localStorage.removeItem(k);
                 continue;
               }
-              const partnerAvatar = partnerProfile?.avatarUrl || partnerProfile?.avatar || partnerProfile?.avatar_url ||
-                ((lastMsg.senderUid !== uid && lastMsg.senderAvatar) ? lastMsg.senderAvatar : null) || '';
+
+              const partnerAvatar = isPartnerAdmin
+                ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200'
+                : (partnerProfile?.avatarUrl || partnerProfile?.avatar || partnerProfile?.avatar_url ||
+                  ((lastMsg.senderUid !== uid && lastMsg.senderAvatar) ? lastMsg.senderAvatar : null) || '');
+
+              const dedupeKey = isPartnerAdmin ? ADMIN_CANONICAL_UID : otherUid;
+              const existing = convMap.get(dedupeKey);
+
+              const canonicalConvId = isPartnerAdmin 
+                ? getDirectConversationId(uid, ADMIN_CANONICAL_UID)
+                : convId;
+
+              const inboxEntry = {
+                conversationId: canonicalConvId,
+                id: canonicalConvId,
+                type: 'direct',
+                title: partnerName,
+                name: partnerName,
+                avatarUrl: partnerAvatar,
+                otherUid: isPartnerAdmin ? ADMIN_CANONICAL_UID : otherUid,
+                isEncrypted: true,
+                unreadCount: (lastMsg.senderUid !== uid) ? 1 : 0,
+                isPinned: false,
+                isMuted: false,
+                lastMessage: {
+                  text: lastMsg.text || lastMsg.content || '',
+                  senderUid: lastMsg.senderUid,
+                  senderName: lastMsg.senderName,
+                  timestamp: parseMsgTime(lastMsg) || Date.now()
+                },
+                lastMessageTimestamp: lastMsg.createdAt || lastMsg.created_at || new Date().toISOString(),
+                updatedAt: lastMsg.createdAt || lastMsg.created_at || new Date().toISOString()
+              };
 
               if (!existing) {
-                convMap.set(convId, {
-                  conversationId: convId,
-                  id: convId,
-                  type: 'direct',
-                  title: partnerName,
-                  name: partnerName,
-                  avatarUrl: partnerAvatar,
-                  otherUid,
-                  isEncrypted: true,
-                  unreadCount: (lastMsg.senderUid !== uid) ? 1 : 0,
-                  isPinned: false,
-                  isMuted: false,
-                  lastMessage: {
-                    text: lastMsg.text || lastMsg.content || '',
-                    senderUid: lastMsg.senderUid,
-                    senderName: lastMsg.senderName,
-                    timestamp: parseMsgTime(lastMsg) || Date.now()
-                  },
-                  lastMessageTimestamp: lastMsg.createdAt || lastMsg.created_at || new Date().toISOString(),
-                  updatedAt: lastMsg.createdAt || lastMsg.created_at || new Date().toISOString()
-                });
+                convMap.set(dedupeKey, inboxEntry);
               } else {
                 if (!existing.title || existing.title === 'Athlete') {
                   existing.title = partnerName;
@@ -1415,14 +1545,10 @@ export function getLocalInboxWithDiscovery(uid) {
                 if (!existing.avatarUrl || existing.avatarUrl.includes('direct_')) {
                   existing.avatarUrl = partnerAvatar;
                 }
-                if (lastMsg) {
-                  existing.lastMessage = {
-                    text: lastMsg.text || lastMsg.content || '',
-                    senderUid: lastMsg.senderUid,
-                    senderName: lastMsg.senderName,
-                    timestamp: parseMsgTime(lastMsg) || Date.now()
-                  };
-                  existing.lastMessageTimestamp = lastMsg.createdAt || lastMsg.created_at || existing.lastMessageTimestamp;
+                const tExisting = parseMsgTime(existing.lastMessage);
+                const tNew = parseMsgTime(inboxEntry.lastMessage);
+                if (tNew >= tExisting) {
+                  convMap.set(dedupeKey, { ...existing, ...inboxEntry });
                 }
               }
             }
@@ -1504,42 +1630,64 @@ export function subscribeToUserInbox(uid, callback) {
       const mergedMap = new Map();
       items.forEach(it => {
         const id = it.conversationId || it.id;
-        if (id) {
-          const localMatch = localItems.find(l => (l.conversationId === id || l.id === id));
-          let resolvedTitle = it.title || it.name || localMatch?.title || localMatch?.name;
-          let resolvedAvatar = it.avatarUrl || it.avatar || localMatch?.avatarUrl || localMatch?.avatar;
-          let otherUid = it.otherUid || localMatch?.otherUid;
-
-          if ((!resolvedTitle || resolvedTitle === 'Athlete') && id.startsWith('direct_')) {
-            if (!otherUid) {
-              const parts = id.replace('direct_', '').split('_');
-              otherUid = parts.find(p => p !== uid) || null;
-            }
-            if (otherUid) {
-              try {
-                const allAthletes = JSON.parse(localStorage.getItem('turfington_athletes_cache') || '[]');
-                const found = allAthletes.find(a => a.id === otherUid || a.uid === otherUid || a.firebase_uid === otherUid);
-                if (found) {
-                  resolvedTitle = found.full_name || found.name || resolvedTitle;
-                  resolvedAvatar = resolvedAvatar || found.avatar || found.avatar_url || '';
-                }
-              } catch {}
-            }
-          }
-
-          mergedMap.set(id, {
-            ...it,
-            title: resolvedTitle || it.title || 'Athlete',
-            name: resolvedTitle || it.name || 'Athlete',
-            avatarUrl: resolvedAvatar || it.avatarUrl || '',
-            otherUid: otherUid || it.otherUid || null
-          });
+        if (!id) return;
+        if (id.includes('admin_official_turfington')) {
+          deleteDoc(doc(db, 'users', uid, 'inbox', id)).catch(() => {});
+          return;
         }
+
+        const localMatch = localItems.find(l => (l.conversationId === id || l.id === id));
+        let otherUid = it.otherUid || localMatch?.otherUid;
+        if ((!otherUid || otherUid === 'admin') && id.startsWith('direct_')) {
+          otherUid = getOtherUidFromDirectId(id, uid);
+        }
+        otherUid = canonicalizeUid(otherUid);
+
+        const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || id.includes('turfington_admin_official');
+        let resolvedTitle = isPartnerAdmin ? 'Turfington Support & Security' : (it.title || it.name || localMatch?.title || localMatch?.name);
+        let resolvedAvatar = isPartnerAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (it.avatarUrl || it.avatar || localMatch?.avatarUrl || localMatch?.avatar);
+
+        if (!isPartnerAdmin && (!resolvedTitle || resolvedTitle === 'Athlete') && id.startsWith('direct_')) {
+          if (otherUid) {
+            try {
+              const allAthletes = JSON.parse(localStorage.getItem('turfington_athletes_cache') || '[]');
+              const found = allAthletes.find(a => a.id === otherUid || a.uid === otherUid || a.firebase_uid === otherUid);
+              if (found) {
+                resolvedTitle = found.full_name || found.name || resolvedTitle;
+                resolvedAvatar = resolvedAvatar || found.avatar || found.avatar_url || '';
+              }
+            } catch {}
+          }
+        }
+
+        const canonicalConvId = isPartnerAdmin ? getDirectConversationId(uid, ADMIN_CANONICAL_UID) : id;
+        const dedupeKey = isPartnerAdmin ? ADMIN_CANONICAL_UID : (otherUid && id.startsWith('direct_') ? otherUid : canonicalConvId);
+
+        mergedMap.set(dedupeKey, {
+          ...it,
+          id: canonicalConvId,
+          conversationId: canonicalConvId,
+          title: resolvedTitle || it.title || 'Athlete',
+          name: resolvedTitle || it.name || 'Athlete',
+          avatarUrl: resolvedAvatar || it.avatarUrl || '',
+          otherUid: isPartnerAdmin ? ADMIN_CANONICAL_UID : (otherUid || it.otherUid || null)
+        });
       });
+
       localItems.forEach(it => {
         const id = it.conversationId || it.id;
-        if (id && !mergedMap.has(id)) {
-          mergedMap.set(id, it);
+        if (!id || id.includes('admin_official_turfington')) return;
+        const isDirect = it.type === 'direct' || id.startsWith('direct_');
+        let otherUid = canonicalizeUid(it.otherUid || (isDirect ? getOtherUidFromDirectId(id, uid) : null));
+        const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || id.includes('turfington_admin_official');
+        const dedupeKey = isPartnerAdmin ? ADMIN_CANONICAL_UID : (otherUid && isDirect ? otherUid : id);
+        if (!mergedMap.has(dedupeKey)) {
+          mergedMap.set(dedupeKey, {
+            ...it,
+            id: isPartnerAdmin ? getDirectConversationId(uid, ADMIN_CANONICAL_UID) : id,
+            conversationId: isPartnerAdmin ? getDirectConversationId(uid, ADMIN_CANONICAL_UID) : id,
+            otherUid: isPartnerAdmin ? ADMIN_CANONICAL_UID : otherUid
+          });
         }
       });
 
@@ -1555,7 +1703,7 @@ export function subscribeToUserInbox(uid, callback) {
       const validMergedList = mergedList.filter(it => {
         const id = it.conversationId || it.id || '';
         const titleLower = String(it.title || it.name || '').toLowerCase().trim();
-        if (titleLower.includes('ayesha') || id.includes('oJTe3P6YLhPWTfmUHaWInRUGtHm2')) {
+        if (titleLower.includes('ayesha') || id.includes('oJTe3P6YLhPWTfmUHaWInRUGtHm2') || id.includes('admin_official_turfington')) {
           deleteDoc(doc(db, 'users', uid, 'inbox', id)).catch(() => {});
           return false;
         }
@@ -1609,14 +1757,29 @@ export function subscribeToUserInbox(uid, callback) {
           const discovered = [];
           for (const d of convsSnap.docs) {
             const cData = d.data();
-            const cid = d.id;
-            const isDirect = cid.startsWith('direct_') || cData.type === 'direct';
-            const otherUid = isDirect ? (cData.members || []).find(m => m !== uid) : null;
-            
-            let title = cData.title || cData.name || (isDirect ? 'Athlete' : 'Sports Group');
-            let avatarUrl = cData.avatarUrl || cData.avatar || '';
+            let cid = d.id;
+            if (cid.includes('admin_official_turfington')) {
+              deleteDoc(doc(db, 'conversations', cid)).catch(() => {});
+              deleteDoc(doc(db, 'users', uid, 'inbox', cid)).catch(() => {});
+              continue;
+            }
 
-            if (isDirect && otherUid) {
+            const isDirect = cid.startsWith('direct_') || cData.type === 'direct';
+            let otherUid = isDirect ? getOtherUidFromDirectId(cid, uid) : null;
+            if (!otherUid && isDirect) {
+              otherUid = (cData.members || []).map(canonicalizeUid).find(m => m !== uid) || null;
+            }
+            otherUid = canonicalizeUid(otherUid);
+
+            const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || cid.includes('turfington_admin_official');
+            if (isPartnerAdmin) {
+              cid = getDirectConversationId(uid, ADMIN_CANONICAL_UID);
+            }
+
+            let title = isPartnerAdmin ? 'Turfington Support & Security' : (cData.title || cData.name || (isDirect ? 'Athlete' : 'Sports Group'));
+            let avatarUrl = isPartnerAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (cData.avatarUrl || cData.avatar || '');
+
+            if (isDirect && otherUid && !isPartnerAdmin) {
               try {
                 const partnerDoc = await getDoc(doc(db, 'users', otherUid));
                 if (partnerDoc.exists()) {
@@ -1645,7 +1808,7 @@ export function subscribeToUserInbox(uid, callback) {
               title,
               name: title,
               avatarUrl,
-              otherUid,
+              otherUid: isPartnerAdmin ? ADMIN_CANONICAL_UID : otherUid,
               lastMessage: decryptedLastMsg || cData.lastMessage || null,
               lastMessageTimestamp: cData.lastMessageTimestamp || cData.updatedAt || null,
               updatedAt: cData.updatedAt || null
@@ -1664,10 +1827,14 @@ export function subscribeToUserInbox(uid, callback) {
             const localKey = `turfington_inbox_${uid}`;
             const local = JSON.parse(localStorage.getItem(localKey) || '[]');
             const map = new Map();
-            local.forEach(i => map.set(i.conversationId || i.id, i));
+            local.forEach(i => {
+              const k = i.otherUid && i.type === 'direct' ? `direct_${i.otherUid}` : (i.conversationId || i.id);
+              map.set(k, i);
+            });
             discovered.forEach(i => {
-              const prev = map.get(i.conversationId);
-              map.set(i.conversationId, { ...prev, ...i });
+              const k = i.otherUid && i.type === 'direct' ? `direct_${i.otherUid}` : (i.conversationId || i.id);
+              const prev = map.get(k);
+              map.set(k, { ...prev, ...i });
             });
             const merged = Array.from(map.values());
             localStorage.setItem(localKey, JSON.stringify(merged));
