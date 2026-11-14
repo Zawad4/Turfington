@@ -1,22 +1,42 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { apiFetchVenues } from '../services/db';
+import { apiFetchVenues, getLocalCachedVenues } from '../services/db';
 import { calculateDistance } from '../utils/geo';
 
 /**
  * Custom hook to fetch and filter sports venues
  */
 export function useVenues({ initialSport = 'All', userCoords = null, ownerId = null } = {}) {
-  const [venues, setVenues] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [venues, setVenues] = useState(() => {
+    try {
+      const cached = getLocalCachedVenues(ownerId ? { ownerId } : {});
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = getLocalCachedVenues(ownerId ? { ownerId } : {});
+      return !cached || cached.length === 0;
+    } catch {
+      return true;
+    }
+  });
   const [error, setError] = useState(null);
   const [selectedSport, setSelectedSport] = useState(initialSport);
   const [searchQuery, setSearchQuery] = useState('');
 
   const loadVenues = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
       const params = ownerId ? { ownerId } : {};
+      const cached = getLocalCachedVenues(params);
+      if (cached && cached.length > 0) {
+        setVenues(cached);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
       const data = await apiFetchVenues(params);
       setVenues(Array.isArray(data) ? data : []);
     } catch (err) {

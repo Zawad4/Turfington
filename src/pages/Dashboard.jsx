@@ -13,7 +13,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
-import { apiFetchBookings, apiFetchOwnerBookings, apiFetchVenues, apiCreateDirectChat, apiFetchMessages, apiSendMessage, apiUpdateBookingStatus } from '../services/db';
+import { apiFetchBookings, apiFetchOwnerBookings, apiFetchVenues, getLocalCachedVenues, apiCreateDirectChat, apiFetchMessages, apiSendMessage, apiUpdateBookingStatus } from '../services/db';
 import { formatTime12Hour, isUserBookingStrict } from '../utils/formatters';
 
 /* ════════════════════════════════════════════════════════════
@@ -840,8 +840,25 @@ const SPORT_COLORS = {
 
 function OwnerDashboard({ user }) {
   const [recentBookings, setRecentBookings] = useState([]);
-  const [ownerVenues, setOwnerVenues] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [ownerVenues, setOwnerVenues] = useState(() => {
+    const ownerId = user?.id || user?.uid || user?.firebase_uid;
+    const ownerEmail = user?.email;
+    const ownerName = user?.full_name || user?.name;
+    if (!ownerId && !ownerEmail) return [];
+    try {
+      const cached = getLocalCachedVenues({ ownerId, ownerUid: user?.firebase_uid, ownerEmail, ownerName });
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    const ownerId = user?.id || user?.uid || user?.firebase_uid;
+    const ownerEmail = user?.email;
+    if (!ownerId && !ownerEmail) return false;
+    const cached = getLocalCachedVenues({ ownerId, ownerEmail });
+    return cached.length === 0;
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -859,7 +876,12 @@ function OwnerDashboard({ user }) {
         return;
       }
 
-      setLoading(true);
+      const cachedVns = getLocalCachedVenues({ ownerId, ownerUid: user?.firebase_uid, ownerEmail, ownerName });
+      if (cachedVns && cachedVns.length > 0 && isMounted) {
+        setOwnerVenues(cachedVns);
+        setLoading(false);
+      }
+
       const [bks, vns] = await Promise.all([
         apiFetchOwnerBookings({ ownerId, ownerUid: user?.firebase_uid, ownerEmail, ownerName }),
         apiFetchVenues({ ownerId, ownerUid: user?.firebase_uid, ownerEmail, ownerName })

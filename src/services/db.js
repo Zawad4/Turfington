@@ -2374,7 +2374,7 @@ if (typeof window !== 'undefined') {
   } catch {}
 }
 
-export async function apiFetchVenues(filters = {}) {
+export function getLocalCachedVenues(filters = {}) {
   let customVenues = [];
   try {
     const s = localStorage.getItem('turfington_custom_venues');
@@ -2418,41 +2418,8 @@ export async function apiFetchVenues(filters = {}) {
     } catch {}
   }
 
-  let apiVenues = [];
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`${API_BASE}/api/venues`, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.venues && Array.isArray(data.venues)) {
-        apiVenues = data.venues;
-      }
-    }
-  } catch {}
-
-  let dbVenues = [];
-  try {
-    const snap = await getDocs(collection(db, 'venues'));
-    if (!snap.empty) {
-      dbVenues = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    }
-  } catch (err) {
-    console.warn('apiFetchVenues Firestore notice:', err);
-  }
-
-  let dbTurfs = [];
-  try {
-    const snapTurfs = await getDocs(collection(db, 'turfs'));
-    if (!snapTurfs.empty) {
-      dbTurfs = snapTurfs.docs.map(d => ({ id: d.id, ...d.data() }));
-    }
-  } catch {}
-
   const map = new Map();
-  // Custom venues take highest priority
-  [...customVenues, ...apiVenues, ...dbVenues, ...dbTurfs, ...DEFAULT_TURFS].forEach(v => {
+  [...customVenues, ...DEFAULT_TURFS].forEach(v => {
     if (!v || (!v.id && !v.name)) return;
     const key = String(v.id || v.name);
     if (map.has(key)) return;
@@ -2464,8 +2431,15 @@ export async function apiFetchVenues(filters = {}) {
       ? v.sports 
       : [v.sport || v.category || 'Sports'];
 
+    let vSlots = v.slots;
+    try {
+      const savedS = localStorage.getItem('turfington_venue_slots_' + (v.id || key));
+      if (savedS) vSlots = JSON.parse(savedS);
+    } catch {}
+
     map.set(key, {
       ...v,
+      slots: vSlots,
       id: v.id || key,
       name: v.name || 'Sports Arena',
       venue: v.name || 'Sports Arena',
@@ -2481,6 +2455,7 @@ export async function apiFetchVenues(filters = {}) {
       image_url: resolvedImage,
       image: resolvedImage,
       rating: v.rating || 5.0,
+      is_open_24_hours: v.is_open_24_hours ?? true,
       owner_id: v.owner_id || v.ownerId || null,
       owner_uid: v.owner_uid || null,
       owner_email: v.owner_email || null,
@@ -2517,107 +2492,97 @@ export async function apiFetchVenues(filters = {}) {
   return allVenues;
 }
 
-export async function apiFetchTurfs() {
-  let customVenues = [];
+export async function apiFetchVenues(filters = {}) {
+  // Sync latest from Firestore in background/await without blocking dead port 5000
   try {
-    const s = localStorage.getItem('turfington_custom_venues');
-    if (s) customVenues = JSON.parse(s);
-  } catch {}
-
-  let apiVenues = [];
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`${API_BASE}/api/venues`, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.venues && Array.isArray(data.venues)) {
-        apiVenues = data.venues;
-      }
+    const snap = await getDocs(collection(db, 'venues'));
+    if (!snap.empty) {
+      const liveVenues = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const s = localStorage.getItem('turfington_custom_venues');
+      const existing = s ? JSON.parse(s) : [];
+      const map = new Map();
+      liveVenues.forEach(v => map.set(String(v.id || v.name), v));
+      existing.forEach(v => {
+        const k = String(v.id || v.name);
+        if (!map.has(k)) map.set(k, v);
+      });
+      localStorage.setItem('turfington_custom_venues', JSON.stringify(Array.from(map.values())));
     }
-  } catch {}
+  } catch (err) {
+    console.warn('apiFetchVenues Firestore notice:', err);
+  }
 
-  let dbVenues = [];
-  try {
-    const snapVenues = await getDocs(collection(db, 'venues'));
-    if (!snapVenues.empty) {
-      dbVenues = snapVenues.docs.map(d => ({ id: d.id, ...d.data() }));
-    }
-  } catch {}
-
-  let dbTurfs = [];
   try {
     const snapTurfs = await getDocs(collection(db, 'turfs'));
     if (!snapTurfs.empty) {
-      dbTurfs = snapTurfs.docs.map(d => ({ id: d.id, ...d.data() }));
+      const dbTurfs = snapTurfs.docs.map(d => ({ id: d.id, ...d.data() }));
+      const s = localStorage.getItem('turfington_custom_venues');
+      const existing = s ? JSON.parse(s) : [];
+      const map = new Map();
+      dbTurfs.forEach(v => map.set(String(v.id || v.name), v));
+      existing.forEach(v => {
+        const k = String(v.id || v.name);
+        if (!map.has(k)) map.set(k, v);
+      });
+      localStorage.setItem('turfington_custom_venues', JSON.stringify(Array.from(map.values())));
     }
   } catch {}
 
-  const map = new Map();
-  // Order: custom venues first, then API venues, then Firestore, then DEFAULT_TURFS
-  [...customVenues, ...apiVenues, ...dbVenues, ...dbTurfs, ...DEFAULT_TURFS].forEach(t => {
-    if (!t || (!t.id && !t.name)) return;
-    const key = String(t.id || t.name);
-    if (map.has(key)) return;
+  return getLocalCachedVenues(filters);
+}
 
-    const resolvedImage = resolveVenueImageUrl(t.storage_path || t.image_url || t.image);
-    const lat = parseFloat(t.latitude ?? t.lat) || 13.0827;
-    const lng = parseFloat(t.longitude ?? t.lng) || 80.2707;
-    const sportsList = Array.isArray(t.sports) && t.sports.length > 0 
-      ? t.sports 
-      : [t.sport || t.category || 'Sports'];
+export async function apiFetchTurfs() {
+  try {
+    const snapVenues = await getDocs(collection(db, 'venues'));
+    if (!snapVenues.empty) {
+      const dbVenues = snapVenues.docs.map(d => ({ id: d.id, ...d.data() }));
+      const s = localStorage.getItem('turfington_custom_venues');
+      const existing = s ? JSON.parse(s) : [];
+      const map = new Map();
+      dbVenues.forEach(v => map.set(String(v.id || v.name), v));
+      existing.forEach(v => {
+        const k = String(v.id || v.name);
+        if (!map.has(k)) map.set(k, v);
+      });
+      localStorage.setItem('turfington_custom_venues', JSON.stringify(Array.from(map.values())));
+    }
+  } catch {}
 
-    let vSlots = t.slots;
-    try {
-      const savedS = localStorage.getItem('turfington_venue_slots_' + (t.id || key));
-      if (savedS) vSlots = JSON.parse(savedS);
-    } catch {}
+  try {
+    const snapTurfs = await getDocs(collection(db, 'turfs'));
+    if (!snapTurfs.empty) {
+      const dbTurfs = snapTurfs.docs.map(d => ({ id: d.id, ...d.data() }));
+      const s = localStorage.getItem('turfington_custom_venues');
+      const existing = s ? JSON.parse(s) : [];
+      const map = new Map();
+      dbTurfs.forEach(v => map.set(String(v.id || v.name), v));
+      existing.forEach(v => {
+        const k = String(v.id || v.name);
+        if (!map.has(k)) map.set(k, v);
+      });
+      localStorage.setItem('turfington_custom_venues', JSON.stringify(Array.from(map.values())));
+    }
+  } catch {}
 
-    map.set(key, {
-      ...t,
-      slots: vSlots,
-      id: t.id || key,
-      name: t.name || 'Sports Arena',
-      venue: t.name || 'Sports Arena',
-      sport: t.sport || sportsList[0] || 'Sports',
-      category: t.category || t.sport || sportsList[0] || 'Sports',
-      sports: sportsList,
-      lat,
-      lng,
-      latitude: lat,
-      longitude: lng,
-      price: t.price || (t.price_per_hr ? `₹${t.price_per_hr}/hr` : '₹1,000/hr'),
-      price_per_hr: Number(t.price_per_hr) || 1000,
-      image_url: resolvedImage,
-      image: resolvedImage,
-      rating: t.rating || 5.0,
-      is_open_24_hours: t.is_open_24_hours ?? true,
-      isNew: t.isNew ?? (String(t.id).startsWith('venue_') || t.owner_id != null),
-      owner_id: t.owner_id || t.ownerId || null,
-      owner_name: t.owner_name || t.ownerName || null
-    });
-  });
-
-  return Array.from(map.values());
+  return getLocalCachedVenues();
 }
 
 export function apiSubscribeVenues(callback) {
   if (typeof callback !== 'function') return () => {};
 
-  // 1. Immediately emit current cached/loaded venues
-  apiFetchTurfs().then(turfs => callback(turfs));
+  // 1. Immediately emit current cached/loaded venues synchronously (0ms latency on refresh)
+  callback(getLocalCachedVenues());
 
   // 2. Window event listener for intra-app updates
   const handleUpdate = () => {
-    apiFetchTurfs().then(turfs => callback(turfs));
+    callback(getLocalCachedVenues());
   };
   window.addEventListener('turfington_venues_updated', handleUpdate);
 
   // 3. Storage event listener for cross-tab localStorage updates
   const handleStorage = (e) => {
     if (e.key === 'turfington_custom_venues' || e.key === 'turfington_venues_timestamp') {
-      apiFetchTurfs().then(turfs => callback(turfs));
+      callback(getLocalCachedVenues());
     }
   };
   window.addEventListener('storage', handleStorage);
@@ -2629,7 +2594,7 @@ export function apiSubscribeVenues(callback) {
       channel = new BroadcastChannel('turfington_venues_channel');
       channel.onmessage = (msg) => {
         if (msg.data?.type === 'VENUES_UPDATED') {
-          apiFetchTurfs().then(turfs => callback(turfs));
+          callback(getLocalCachedVenues());
         }
       };
     }
@@ -2654,7 +2619,7 @@ export function apiSubscribeVenues(callback) {
           localStorage.setItem('turfington_custom_venues', JSON.stringify(Array.from(map.values())));
         } catch {}
       }
-      apiFetchTurfs().then(turfs => callback(turfs));
+      callback(getLocalCachedVenues());
     }, (err) => {
       console.warn('venues onSnapshot error:', err);
     });
@@ -2662,7 +2627,7 @@ export function apiSubscribeVenues(callback) {
 
   try {
     unsubTurfs = onSnapshot(collection(db, 'turfs'), () => {
-      apiFetchTurfs().then(turfs => callback(turfs));
+      callback(getLocalCachedVenues());
     }, () => {});
   } catch {}
 
@@ -3634,6 +3599,26 @@ export function purgeLegacyMarketplaceItems() {
 
 const INITIAL_MARKETPLACE_ITEMS = [];
 
+export function getLocalCachedMarketplaceItems() {
+  let localItems = [];
+  try {
+    const s = localStorage.getItem('turfington_marketplace_items');
+    if (s) {
+      const parsed = JSON.parse(s);
+      localItems = Array.isArray(parsed) ? parsed : [];
+    }
+  } catch {
+    localItems = [];
+  }
+
+  return (localItems || []).filter(item => 
+    item && typeof item === 'object' && item.id &&
+    !LEGACY_TEST_MARKETPLACE_IDS.has(item.id) &&
+    !MOCK_SELLER_NAMES.has(item.sellerName) &&
+    !MOCK_SELLER_NAMES.has(item.seller_name)
+  );
+}
+
 export async function apiFetchMarketplaceItems() {
   purgeLegacyMarketplaceItems();
 
@@ -3654,23 +3639,7 @@ export async function apiFetchMarketplaceItems() {
     console.warn('apiFetchMarketplaceItems remote fetch warning:', err);
   }
 
-  let localItems = [];
-  try {
-    const s = localStorage.getItem('turfington_marketplace_items');
-    if (s) {
-      const parsed = JSON.parse(s);
-      localItems = Array.isArray(parsed) ? parsed : [];
-    }
-  } catch {
-    localItems = [];
-  }
-
-  return (localItems || []).filter(item => 
-    item && typeof item === 'object' && item.id &&
-    !LEGACY_TEST_MARKETPLACE_IDS.has(item.id) &&
-    !MOCK_SELLER_NAMES.has(item.sellerName) &&
-    !MOCK_SELLER_NAMES.has(item.seller_name)
-  );
+  return getLocalCachedMarketplaceItems();
 }
 
 /**
@@ -3732,16 +3701,24 @@ export function apiSubscribeMarketplaceItems(callback) {
 
   purgeLegacyMarketplaceItems();
 
-  // 1. Initial cached/remote load
-  apiFetchMarketplaceItems().then(items => callback(items));
+  // 1. Immediately emit cached marketplace items (0ms latency on refresh / page switch)
+  callback(getLocalCachedMarketplaceItems());
 
   // 2. Window event listener
   const handleUpdate = () => {
-    apiFetchMarketplaceItems().then(items => callback(items));
+    callback(getLocalCachedMarketplaceItems());
   };
   window.addEventListener('turfington_marketplace_updated', handleUpdate);
 
-  // 3. Firestore onSnapshot real-time listener (Firestore is authoritative)
+  // 3. Storage event listener for cross-tab sync
+  const handleStorage = (e) => {
+    if (e.key === 'turfington_marketplace_items') {
+      callback(getLocalCachedMarketplaceItems());
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
+  // 4. Firestore onSnapshot real-time listener (authoritative remote sync in background)
   let unsubFirestore = null;
   try {
     unsubFirestore = onSnapshot(collection(db, 'marketplace_items'), (snap) => {
@@ -3765,6 +3742,7 @@ export function apiSubscribeMarketplaceItems(callback) {
 
   return () => {
     window.removeEventListener('turfington_marketplace_updated', handleUpdate);
+    window.removeEventListener('storage', handleStorage);
     if (typeof unsubFirestore === 'function') unsubFirestore();
   };
 }

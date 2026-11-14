@@ -23,6 +23,7 @@ import {
 import { 
   apiFetchMarketplaceItems, 
   apiSubscribeMarketplaceItems, 
+  getLocalCachedMarketplaceItems,
   apiCreateMarketplaceItem, 
   apiUpdateMarketplaceItem, 
   apiDeleteMarketplaceItem,
@@ -69,12 +70,16 @@ export default function Marketplace({
     image: ''
   });
 
-  const [productsList, setProductsList] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [productsList, setProductsList] = useState(() => getLocalCachedMarketplaceItems());
+  const [isLoading, setIsLoading] = useState(() => getLocalCachedMarketplaceItems().length === 0);
 
-    useEffect(() => {
+  useEffect(() => {
     purgeLegacyMarketplaceItems();
-    setIsLoading(true);
+    const cached = getLocalCachedMarketplaceItems();
+    if (cached && cached.length > 0) {
+      setProductsList(cached);
+      setIsLoading(false);
+    }
     const unsubscribe = apiSubscribeMarketplaceItems((items) => {
       if (Array.isArray(items)) {
         setProductsList(items);

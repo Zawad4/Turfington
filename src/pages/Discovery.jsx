@@ -12,7 +12,7 @@ import SportIcon from '../components/SportIcon';
 import VenueImage from '../components/VenueImage';
 import UserAvatar from '../components/UserAvatar';
 import VerifiedBadge from '../components/VerifiedBadge';
-import { apiFetchTurfs, apiFetchNearbyTurfs, apiCreateBooking, apiUpdateBookingStatus, apiFetchNearbyPlayers, apiSearchUsers, apiFollowUser, apiCreateDirectChat, apiSubscribeVenues, apiCreateHostedMatch, apiFetchHostedMatches, apiJoinHostedMatch, apiLeaveHostedMatch } from '../services/db';
+import { apiFetchTurfs, apiFetchNearbyTurfs, apiCreateBooking, apiUpdateBookingStatus, apiFetchNearbyPlayers, apiSearchUsers, apiFollowUser, apiCreateDirectChat, apiSubscribeVenues, getLocalCachedVenues, apiCreateHostedMatch, apiFetchHostedMatches, apiJoinHostedMatch, apiLeaveHostedMatch } from '../services/db';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import { useToast } from '../context';
 import { formatTime12Hour } from '../utils/formatters';
@@ -446,16 +446,60 @@ export default function Discovery({
   const [isPaying, setIsPaying] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
 
-  // ── Fetch dynamic venues from Firebase ──
-  const [activitiesLoading, setActivitiesLoading] = useState(true);
-  const [rawActivities, setRawActivities] = useState([]);
+  // Helper to map raw turf/venue data into the UI activity shape
+  const mapTurfToActivity = useCallback((t) => {
+    let tLat = parseFloat(t.latitude ?? t.lat);
+    let tLng = parseFloat(t.longitude ?? t.lng);
+    if (isNaN(tLat) || isNaN(tLng) || tLat < 8 || tLat > 36 || tLng < 68 || tLng > 97) {
+      tLat = 13.0827;
+      tLng = 80.2707;
+    }
+    const isCustom = String(t.id).startsWith('venue_') || t.owner_id != null || t.isNew === true;
+    const sportsList = Array.isArray(t.sports) && t.sports.length > 0 
+      ? t.sports 
+      : [t.category || t.sport || 'Sports'];
+    const isOpen24 = Boolean(t.is_open_24_hours === true && (t.operating_hours === '24 Hours' || !t.operating_hours));
+    const operatingHours = t.operating_hours || (t.opening_time && t.closing_time ? `${formatTime12Hour(t.opening_time)} - ${formatTime12Hour(t.closing_time)}` : (isOpen24 ? '24 Hours' : (t.time && t.time !== 'Flexible' ? t.time : '06:00 AM - 11:00 PM')));
+    return {
+      id: t.id,
+      title: t.name || t.venue || 'Sports Venue',
+      name: t.name || t.venue || 'Sports Venue',
+      sport: t.category || sportsList[0] || t.sport || 'Sports',
+      category: t.category || sportsList[0] || t.sport || 'Sports',
+      sports: sportsList,
+      venue: t.name || t.venue || 'Sports Venue',
+      lat: tLat,
+      lng: tLng,
+      latitude: tLat,
+      longitude: tLng,
+      time: operatingHours,
+      operating_hours: operatingHours,
+      opening_time: t.opening_time || '06:00',
+      closing_time: t.closing_time || '23:00',
+      slots: 'Multiple slots',
+      joined: 0,
+      total: 10,
+      skill: 'Any',
+      price: t.price || (t.price_per_hr ? `₹${t.price_per_hr}/hr` : 'Contact for price'),
+      rating: t.rating || 5.0,
+      image: t.image_url || t.image,
+      image_url: t.image_url || t.image,
+      phone: t.phone,
+      address: t.address || t.location || 'Chennai, Tamil Nadu',
+      description: t.description || 'Modern synthetic sports venue.',
+      booking_mode: t.booking_mode || t.booking_type || (t.requires_approval ? 'request' : 'direct'),
+      booking_type: t.booking_mode || t.booking_type || (t.requires_approval ? 'request' : 'direct'),
+      requires_approval: t.requires_approval ?? ((t.booking_mode || t.booking_type) === 'request'),
+      isNew: isCustom,
+      owner_id: t.owner_id
+    };
+  }, []);
 
-  // Subscribe to real-time venue updates from Firebase and local events
-  useEffect(() => {
-    setActivitiesLoading(true);
-    const unsubscribe = apiSubscribeVenues((turfs) => {
-      // Map Firebase/API turfs to 'activities' shape expected by the UI
-      const mapped = turfs.map(t => {
+  // ── Fetch dynamic venues from Firebase (Instant 0ms Cache-First) ──
+  const [rawActivities, setRawActivities] = useState(() => {
+    try {
+      const cached = getLocalCachedVenues();
+      return Array.isArray(cached) && cached.length > 0 ? cached.map(t => {
         let tLat = parseFloat(t.latitude ?? t.lat);
         let tLng = parseFloat(t.longitude ?? t.lng);
         if (isNaN(tLat) || isNaN(tLng) || tLat < 8 || tLat > 36 || tLng < 68 || tLng > 97) {
@@ -463,9 +507,7 @@ export default function Discovery({
           tLng = 80.2707;
         }
         const isCustom = String(t.id).startsWith('venue_') || t.owner_id != null || t.isNew === true;
-        const sportsList = Array.isArray(t.sports) && t.sports.length > 0 
-          ? t.sports 
-          : [t.category || t.sport || 'Sports'];
+        const sportsList = Array.isArray(t.sports) && t.sports.length > 0 ? t.sports : [t.category || t.sport || 'Sports'];
         const isOpen24 = Boolean(t.is_open_24_hours === true && (t.operating_hours === '24 Hours' || !t.operating_hours));
         const operatingHours = t.operating_hours || (t.opening_time && t.closing_time ? `${formatTime12Hour(t.opening_time)} - ${formatTime12Hour(t.closing_time)}` : (isOpen24 ? '24 Hours' : (t.time && t.time !== 'Flexible' ? t.time : '06:00 AM - 11:00 PM')));
         return {
@@ -501,7 +543,30 @@ export default function Discovery({
           isNew: isCustom,
           owner_id: t.owner_id
         };
-      });
+      }) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [activitiesLoading, setActivitiesLoading] = useState(() => {
+    try {
+      const cached = getLocalCachedVenues();
+      return !cached || cached.length === 0;
+    } catch {
+      return true;
+    }
+  });
+
+  // Subscribe to real-time venue updates from Firebase and local events
+  useEffect(() => {
+    const cached = getLocalCachedVenues();
+    if (cached && cached.length > 0) {
+      setActivitiesLoading(false);
+    }
+    const unsubscribe = apiSubscribeVenues((turfs) => {
+      // Map Firebase/API turfs to 'activities' shape expected by the UI
+      const mapped = turfs.map(mapTurfToActivity);
       setRawActivities(mapped);
       setActivitiesLoading(false);
     });
@@ -509,11 +574,74 @@ export default function Discovery({
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, [user?.id, user?.role]);
+  }, [user?.id, user?.role, mapTurfToActivity]);
 
 
-  // ── Derived state: activities and players with real distances ──
-  const [activities, setActivities] = useState([]);
+  // ── Derived state: activities and players with real distances (Instant Cache-First) ──
+  const [activities, setActivities] = useState(() => {
+    try {
+      const cached = getLocalCachedVenues();
+      if (!Array.isArray(cached) || cached.length === 0) return [];
+      let userCoords = null;
+      try {
+        const s = localStorage.getItem('turfington_user_location');
+        if (s) userCoords = JSON.parse(s);
+      } catch {}
+      const safeLat = parseFloat(userCoords?.lat) || 13.0827;
+      const safeLng = parseFloat(userCoords?.lng) || 80.2707;
+      return cached.map(t => {
+        let tLat = parseFloat(t.latitude ?? t.lat);
+        let tLng = parseFloat(t.longitude ?? t.lng);
+        if (isNaN(tLat) || isNaN(tLng) || tLat < 8 || tLat > 36 || tLng < 68 || tLng > 97) {
+          tLat = 13.0827;
+          tLng = 80.2707;
+        }
+        const isCustom = String(t.id).startsWith('venue_') || t.owner_id != null || t.isNew === true;
+        const sportsList = Array.isArray(t.sports) && t.sports.length > 0 ? t.sports : [t.category || t.sport || 'Sports'];
+        const isOpen24 = Boolean(t.is_open_24_hours === true && (t.operating_hours === '24 Hours' || !t.operating_hours));
+        const operatingHours = t.operating_hours || (t.opening_time && t.closing_time ? `${formatTime12Hour(t.opening_time)} - ${formatTime12Hour(t.closing_time)}` : (isOpen24 ? '24 Hours' : (t.time && t.time !== 'Flexible' ? t.time : '06:00 AM - 11:00 PM')));
+        const d = haversine(safeLat, safeLng, tLat, tLng);
+        const safeD = (typeof d === 'number' && !isNaN(d)) ? d : 1.0;
+        return {
+          id: t.id,
+          title: t.name || t.venue || 'Sports Venue',
+          name: t.name || t.venue || 'Sports Venue',
+          sport: t.category || sportsList[0] || t.sport || 'Sports',
+          category: t.category || sportsList[0] || t.sport || 'Sports',
+          sports: sportsList,
+          venue: t.name || t.venue || 'Sports Venue',
+          lat: tLat,
+          lng: tLng,
+          latitude: tLat,
+          longitude: tLng,
+          time: operatingHours,
+          operating_hours: operatingHours,
+          opening_time: t.opening_time || '06:00',
+          closing_time: t.closing_time || '23:00',
+          slots: 'Multiple slots',
+          joined: 0,
+          total: 10,
+          skill: 'Any',
+          price: t.price || (t.price_per_hr ? `₹${t.price_per_hr}/hr` : 'Contact for price'),
+          rating: t.rating || 5.0,
+          image: t.image_url || t.image,
+          image_url: t.image_url || t.image,
+          phone: t.phone,
+          address: t.address || t.location || 'Chennai, Tamil Nadu',
+          description: t.description || 'Modern synthetic sports venue.',
+          booking_mode: t.booking_mode || t.booking_type || (t.requires_approval ? 'request' : 'direct'),
+          booking_type: t.booking_mode || t.booking_type || (t.requires_approval ? 'request' : 'direct'),
+          requires_approval: t.requires_approval ?? ((t.booking_mode || t.booking_type) === 'request'),
+          isNew: isCustom,
+          owner_id: t.owner_id,
+          distanceNum: safeD,
+          distance: userCoords ? (safeD < 0.2 ? 'Nearby (< 200m)' : `${safeD} km`) : '? km'
+        };
+      }).sort((a, b) => (a.distanceNum ?? 0) - (b.distanceNum ?? 0));
+    } catch {
+      return [];
+    }
+  });
   const [dbPlayersList, setDbPlayersList] = useState([]);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [selectedPlayerModal, setSelectedPlayerModal] = useState(null);

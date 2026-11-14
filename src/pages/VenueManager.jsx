@@ -10,6 +10,7 @@ import {
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 import { 
   apiFetchVenues, 
+  getLocalCachedVenues,
   apiCreateVenue,
   apiUpdateVenue, 
   apiDeleteVenue, 
@@ -1770,9 +1771,54 @@ function VenueCard({ venue, onToggleActive, onToggleBookingMode, onUpdateSlot, o
   );
 }
 
+/* ─── Format helper for Venue Manager ───────────────── */
+function formatVenueForManager(v, fallbackOwnerId) {
+  return {
+    id: v.id,
+    owner_id: v.owner_id || fallbackOwnerId,
+    name: v.name,
+    location: `${v.address || ''}, ${v.city || ''}`,
+    sports: v.sports || [v.sport || 'Football'],
+    rating: v.rating || 5.0,
+    pricePerHour: v.price_per_hr || 1000,
+    image: v.image,
+    booking_mode: v.booking_mode || v.booking_type || (v.requires_approval ? 'request' : 'direct'),
+    requires_approval: v.requires_approval ?? (v.booking_mode === 'request'),
+    totalSlots: 24,
+    bookedToday: 0,
+    revenue: { week: 0, month: 0 },
+    slots: (() => {
+      try {
+        const s = localStorage.getItem('turfington_venue_slots_' + v.id);
+        if (s) return JSON.parse(s);
+      } catch {}
+      return v.slots || generateSlots();
+    })(),
+    active: true,
+    description: v.surface || 'Synthetic Turf Venue'
+  };
+}
+
 /* ─── Main Page ──────────────────────────────────────── */
 export default function VenueManager({ user, venueOffers, setVenueOffers, onBackToPlayer, onOpenProfileSwitcher }) {
-  const [venues, setVenues] = useState([]);
+  const [venues, setVenues] = useState(() => {
+    const ownerId = user?.id || user?.uid || user?.firebase_uid;
+    const ownerEmail = user?.email;
+    const ownerName = user?.full_name || user?.name;
+    if (!ownerId && !ownerEmail) return [];
+    try {
+      const cached = getLocalCachedVenues({
+        ownerId,
+        ownerUid: user?.firebase_uid || user?.uid,
+        ownerEmail,
+        ownerName
+      });
+      if (Array.isArray(cached) && cached.length > 0) {
+        return cached.map(v => formatVenueForManager(v, ownerId));
+      }
+    } catch {}
+    return [];
+  });
   const [addOpen, setAddOpen] = useState(false);
   const [editingVenue, setEditingVenue] = useState(null);
 
@@ -1895,39 +1941,20 @@ export default function VenueManager({ user, venueOffers, setVenueOffers, onBack
         setVenues([]);
         return;
       }
-      const dbVenues = await apiFetchVenues({
+      const filterParams = {
         ownerId,
         ownerUid: user?.firebase_uid || user?.uid,
         ownerEmail,
         ownerName
-      });
+      };
+      const cached = getLocalCachedVenues(filterParams);
+      if (cached && cached.length > 0) {
+        setVenues(cached.map(v => formatVenueForManager(v, ownerId)));
+      }
+      const dbVenues = await apiFetchVenues(filterParams);
       if (dbVenues && dbVenues.length > 0) {
-        const formatted = dbVenues.map(v => ({
-          id: v.id,
-          owner_id: v.owner_id || ownerId,
-          name: v.name,
-          location: `${v.address || ''}, ${v.city || ''}`,
-          sports: v.sports || [v.sport || 'Football'],
-          rating: v.rating || 5.0,
-          pricePerHour: v.price_per_hr || 1000,
-          image: v.image,
-          booking_mode: v.booking_mode || v.booking_type || (v.requires_approval ? 'request' : 'direct'),
-          requires_approval: v.requires_approval ?? (v.booking_mode === 'request'),
-          totalSlots: 24,
-          bookedToday: 0,
-          revenue: { week: 0, month: 0 },
-          slots: (() => {
-            try {
-              const s = localStorage.getItem('turfington_venue_slots_' + v.id);
-              if (s) return JSON.parse(s);
-            } catch {}
-            return v.slots || generateSlots();
-          })(),
-          active: true,
-          description: v.surface || 'Synthetic Turf Venue'
-        }));
-        setVenues(formatted);
-      } else {
+        setVenues(dbVenues.map(v => formatVenueForManager(v, ownerId)));
+      } else if (!cached || cached.length === 0) {
         setVenues([]);
       }
     };
