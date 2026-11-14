@@ -27,7 +27,7 @@ export default function Home({
     const syncHostedSessions = async () => {
       try {
         const hosted = await apiFetchHostedMatches();
-        if (Array.isArray(hosted) && hosted.length > 0) {
+        if (Array.isArray(hosted)) {
           const mappedHosted = hosted.map(m => ({
             id: m.id,
             title: m.title || `${m.sport} at ${m.venue}`,
@@ -46,18 +46,13 @@ export default function Home({
             isHosted: true,
             price: m.price
           }));
-
-          setSessions(prev => {
-            const seen = new Set();
-            const combined = [...mappedHosted, ...prev].filter(item => {
-              if (seen.has(item.id)) return false;
-              seen.add(item.id);
-              return true;
-            });
-            return combined;
-          });
+          setSessions(mappedHosted);
+        } else {
+          setSessions([]);
         }
-      } catch {}
+      } catch {
+        setSessions([]);
+      }
     };
 
     syncHostedSessions();

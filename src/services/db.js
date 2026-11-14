@@ -3975,6 +3975,16 @@ export async function apiToggleReviewHelpful(reviewId, userId) {
 
 // ── HOSTED MATCHES API HELPERS ──────────────────────────────────────────
 export async function apiFetchHostedMatches() {
+  let firestoreMatches = [];
+  try {
+    if (db) {
+      const snap = await getDocs(collection(db, 'hosted_matches')).catch(() => null);
+      if (snap && !snap.empty) {
+        firestoreMatches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+    }
+  } catch {}
+
   let serverMatches = [];
   try {
     const res = await fetch(`${API_BASE}/api/hosted-matches`);
@@ -3992,9 +4002,10 @@ export async function apiFetchHostedMatches() {
     if (raw) localMatches = JSON.parse(raw);
   } catch {}
 
-  // Merge server and local matches (server takes precedence for matching IDs)
+  // Merge server, firestore, and local matches (server/firestore take precedence)
   const map = new Map();
   localMatches.forEach(m => map.set(m.id, m));
+  firestoreMatches.forEach(m => map.set(m.id, m));
   serverMatches.forEach(m => map.set(m.id, m));
   const merged = Array.from(map.values());
 
@@ -4058,6 +4069,13 @@ export async function apiCreateHostedMatch(matchData) {
       created_at: new Date().toISOString()
     };
   }
+
+  // Also sync directly to Firestore collection 'hosted_matches'
+  try {
+    if (db) {
+      await setDoc(doc(db, 'hosted_matches', createdMatch.id), createdMatch, { merge: true }).catch(() => {});
+    }
+  } catch {}
 
   try {
     const raw = localStorage.getItem('turfington_hosted_matches');

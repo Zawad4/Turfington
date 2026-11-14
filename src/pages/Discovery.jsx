@@ -632,16 +632,27 @@ export default function Discovery({
     { id: 3, name: 'VR Mall Bowlers Group', members: '120 members', online: 8, image: 'https://images.unsplash.com/photo-1541252260730-0412e8e2108e?w=300', category: 'Bowling' }
   ];
 
-  // Filtered Activities (combines standard venues and active hosted matches)
-  const combinedActivitiesList = [
-    ...hostedMatchesList.map(m => ({
+  // Join Games sessions: ONLY active matches hosted by players (Never unhosted turf venues)
+  const combinedActivitiesList = hostedMatchesList.map(m => {
+    let mLat = parseFloat(m.lat);
+    let mLng = parseFloat(m.lng);
+    let distStr = 'Nearby';
+    if (!isNaN(mLat) && !isNaN(mLng) && userCoordinates) {
+      const d = haversine(userCoordinates.lat, userCoordinates.lng, mLat, mLng);
+      distStr = d < 0.2 ? 'Nearby (< 200m)' : `${d} km away`;
+    } else if (m.distance) {
+      distStr = m.distance;
+    }
+    return {
       id: m.id,
       title: m.title || `${m.sport} at ${m.venue}`,
       sport: m.sport || 'Sports',
       venue: m.venue,
-      lat: m.lat || 13.0827,
-      lng: m.lng || 80.2707,
+      lat: isNaN(mLat) ? 13.0827 : mLat,
+      lng: isNaN(mLng) ? 80.2707 : mLng,
+      distance: distStr,
       time: m.time || 'Upcoming Slot',
+      operating_hours: m.time || 'Upcoming Slot',
       slots: 'Open Match Session',
       joined: m.players_joined || 1,
       total: m.players_total || m.capacity || 10,
@@ -650,11 +661,12 @@ export default function Discovery({
       rating: 5.0,
       image: m.image || 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=600',
       isHosted: true,
-      hostName: m.host_name,
-      hostAvatar: m.host_avatar
-    })),
-    ...activities
-  ];
+      hostName: m.host_name || 'Match Host',
+      hostAvatar: m.host_avatar,
+      hostId: m.host_id,
+      participants: Array.isArray(m.participants) ? m.participants : []
+    };
+  });
 
   const filteredActivities = combinedActivitiesList.filter(act => {
     if (selectedSport !== 'All') {
@@ -1603,7 +1615,7 @@ export default function Discovery({
                       {filteredActivities.length === 0 ? (
                         <div className="glass-card p-8 text-center border border-dashed border-white/10 space-y-2">
                           <p className="text-neutral-400 font-bold text-sm">No active game sessions found.</p>
-                          <p className="text-neutral-500 text-xs">Try selecting 'All Sports' or host your own match from any venue card above!</p>
+                          <p className="text-neutral-500 text-xs">Join games will appear when a player hosts an open match session at any venue.</p>
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1629,16 +1641,28 @@ export default function Discovery({
                                   {act.sport}
                                 </span>
                               </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenHostManager && onOpenHostManager(act);
-                                }}
-                                className="absolute top-3 right-3 bg-indigo-600/90 hover:bg-indigo-500 text-white font-extrabold text-[9px] uppercase tracking-wider px-2.5 py-1 rounded-lg border border-indigo-400/30 backdrop-blur-md shadow-md"
-                                title="Host Manager: Review Player Scores"
-                              >
-                                Host Review
-                              </button>
+                              {(() => {
+                                const isHost = act.hostId === (user?.id || user?.firebase_uid) || act.hostName === (user?.name || user?.full_name);
+                                if (isHost) {
+                                  return (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenHostManager && onOpenHostManager(act);
+                                      }}
+                                      className="absolute top-3 right-3 bg-indigo-600/90 hover:bg-indigo-500 text-white font-extrabold text-[9px] uppercase tracking-wider px-2.5 py-1 rounded-lg border border-indigo-400/30 backdrop-blur-md shadow-md"
+                                      title="Host Manager: Review Player Scores"
+                                    >
+                                      Host Review
+                                    </button>
+                                  );
+                                }
+                                return (
+                                  <span className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-indigo-300 font-extrabold text-[9px] uppercase tracking-wider px-2.5 py-1 rounded-lg border border-indigo-400/30 shadow-md">
+                                    Host: {act.hostName || 'Player'}
+                                  </span>
+                                );
+                              })()}
                               <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-black text-white border border-white/10">
                                 {act.price}
                               </div>
