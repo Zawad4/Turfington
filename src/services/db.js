@@ -3440,19 +3440,17 @@ export async function apiFetchMarketplaceItems() {
 
   try {
     const snap = await getDocs(collection(db, 'marketplace_items'));
-    if (!snap.empty) {
-      const dbItems = snap.docs.map(item => ({ id: item.id, ...item.data() }));
-      const cleanDbItems = dbItems.filter(item => 
-        item && typeof item === 'object' && item.id &&
-        !LEGACY_TEST_MARKETPLACE_IDS.has(item.id) &&
-        !MOCK_SELLER_NAMES.has(item.sellerName) &&
-        !MOCK_SELLER_NAMES.has(item.seller_name)
-      );
-      try {
-        localStorage.setItem('turfington_marketplace_items', JSON.stringify(cleanDbItems));
-      } catch {}
-      return cleanDbItems;
-    }
+    const dbItems = snap.docs.map(item => ({ id: item.id, ...item.data() }));
+    const cleanDbItems = dbItems.filter(item => 
+      item && typeof item === 'object' && item.id &&
+      !LEGACY_TEST_MARKETPLACE_IDS.has(item.id) &&
+      !MOCK_SELLER_NAMES.has(item.sellerName) &&
+      !MOCK_SELLER_NAMES.has(item.seller_name)
+    );
+    try {
+      localStorage.setItem('turfington_marketplace_items', JSON.stringify(cleanDbItems));
+    } catch {}
+    return cleanDbItems;
   } catch (err) {
     console.warn('apiFetchMarketplaceItems remote fetch warning:', err);
   }
