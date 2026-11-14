@@ -194,6 +194,25 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
   const [mapPickedAddress, setMapPickedAddress] = useState('');
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
 
+  // Auto-resolve textual address if creating a new venue and we have initial GPS coords but no location text
+  useEffect(() => {
+    if (!venue && !form.location && initialCoords?.lat && initialCoords?.lng) {
+      fetchEnglishReverseGeocode(initialCoords.lat, initialCoords.lng, 14)
+        .then(geo => {
+          if (geo?.fullAddress) {
+            setForm(prev => {
+              if (!prev.location) {
+                return { ...prev, location: geo.fullAddress };
+              }
+              return prev;
+            });
+            setLocationFeedback(`✓ Location detected: ${geo.fullAddress}`);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [venue]);
+
   const handleLocalFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -241,11 +260,10 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
     window._geocodeTimer = setTimeout(async () => {
       try {
         const cleanVal = addressValue.trim();
-        // Search geocoding strictly in English
-        const queryWithContext = `${cleanVal}, Chennai, Tamil Nadu, India`;
-        let data = await fetchEnglishSearchGeocode(queryWithContext);
+        // Search geocoding strictly in English (never hardcoding Chennai/Tamil Nadu)
+        let data = await fetchEnglishSearchGeocode(cleanVal);
         if (!data || data.length === 0) {
-          data = await fetchEnglishSearchGeocode(cleanVal);
+          data = await fetchEnglishSearchGeocode(`${cleanVal}, India`);
         }
 
         if (data && data.length > 0) {
@@ -289,23 +307,31 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
       } catch {}
 
       setPickedCoords({ lat, lng });
-      setForm(prev => ({
-        ...prev,
-        latitude: lat.toString(),
-        longitude: lng.toString()
-      }));
       setIsGpsLocked(true);
-      setIsDetectingGps(false);
-      setLocationFeedback(`✓ Exact GPS coordinates locked (${lat}°, ${lng}°)`);
+      setLocationFeedback(`✓ GPS coordinates locked (${lat}°, ${lng}°)`);
 
       // Reverse geocode in English for human-readable textual location without altering coordinates
       try {
         const geo = await fetchEnglishReverseGeocode(lat, lng, 14);
-        const resolvedAddr = geo.fullAddress || `${geo.city}, Tamil Nadu`;
-        setForm(prev => ({ ...prev, location: resolvedAddr }));
+        const resolvedAddr = geo.fullAddress || geo.city || `${lat}°, ${lng}°`;
+        setForm(prev => ({
+          ...prev,
+          location: resolvedAddr,
+          latitude: lat.toString(),
+          longitude: lng.toString()
+        }));
+        setLocationFeedback(`✓ Location locked: ${resolvedAddr}`);
+        toast.success(`Current location locked: ${resolvedAddr}`);
       } catch (e) {
         console.warn('Reverse geocode warning:', e);
-        setForm(prev => ({ ...prev, location: prev.location || `${lat}, ${lng}` }));
+        setForm(prev => ({
+          ...prev,
+          location: prev.location || `${lat}°, ${lng}°`,
+          latitude: lat.toString(),
+          longitude: lng.toString()
+        }));
+      } finally {
+        setIsDetectingGps(false);
       }
     };
 
@@ -333,9 +359,9 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
   const handleReverseGeocodePicked = async (lat, lng) => {
     try {
       const geo = await fetchEnglishReverseGeocode(lat, lng, 14);
-      setMapPickedAddress(geo.fullAddress || `${geo.city}, Tamil Nadu`);
+      setMapPickedAddress(geo.fullAddress || geo.city || `${lat}°, ${lng}°`);
     } catch {
-      setMapPickedAddress('Chennai, Tamil Nadu');
+      setMapPickedAddress(`${lat}°, ${lng}°`);
     }
   };
 
@@ -863,7 +889,7 @@ function AddVenueModal({ onClose, onAdd, venue = null }) {
                       ...prev,
                       latitude: pickedCoords.lat.toString(),
                       longitude: pickedCoords.lng.toString(),
-                      location: sanitizeLocationToEnglish(mapPickedAddress || prev.location || 'Anna Nagar, Chennai')
+                      location: sanitizeLocationToEnglish(mapPickedAddress || prev.location || `${pickedCoords.lat}°, ${pickedCoords.lng}°`)
                     }));
                     setIsGpsLocked(true);
                     setShowMapPicker(false);

@@ -704,9 +704,9 @@ export default function Discovery({
       // Strict English reverse geocode via Nominatim
       try {
         const geo = await fetchEnglishReverseGeocode(latitude, longitude, 10);
-        setLocationCity(geo.city || 'Chennai');
+        setLocationCity(geo.city || geo.state || 'Current Location');
       } catch {
-        setLocationCity('Chennai'); // fail gracefully in English
+        setLocationCity('Current Location'); // fail gracefully
       }
       setLocationStatus('granted');
     };

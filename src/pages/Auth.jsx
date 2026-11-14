@@ -246,16 +246,18 @@ export default function Auth({ onLogin }) {
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
           let city = 'Chennai';
+          let locationStr = '';
           try {
             const geo = await fetchEnglishReverseGeocode(lat, lng, 10);
             city = geo.city || 'Chennai';
+            locationStr = geo.fullAddress || (geo.state ? `${city}, ${geo.state}` : `${city}, India`);
           } catch {}
           const safeCity = sanitizeLocationToEnglish(city);
           apiUpdateProfile(profile.id || profile.firebase_uid, {
             lat,
             lng,
             city: safeCity,
-            location: `${safeCity}, Tamil Nadu`
+            location: locationStr || `${safeCity}, India`
           });
         }, () => {}, { timeout: 8000 });
       }
