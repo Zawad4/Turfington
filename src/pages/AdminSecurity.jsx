@@ -17,7 +17,8 @@ import {
   apiFetchAdminSecurityMetrics,
   apiFetchBookings,
   apiFetchTournaments,
-  apiFetchMarketplaceItems
+  apiFetchMarketplaceItems,
+  getAdminAvatar
 } from '../services/db';
 
 export default function AdminSecurity({ user, setTab, onOpenProfileSwitcher }) {
@@ -186,7 +187,7 @@ export default function AdminSecurity({ user, setTab, onOpenProfileSwitcher }) {
         type: 'support',
         title: 'Customer Support & Verification Desk',
         price: 'Official Staff',
-        image: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200',
+        image: getAdminAvatar() || targetUser.avatar || '',
         subtitle: `Verifying: ${targetName} (${targetUser.role === 'owner' ? 'Venue Owner' : 'Player'})`
       }
     };
@@ -198,12 +199,6 @@ export default function AdminSecurity({ user, setTab, onOpenProfileSwitcher }) {
     if (typeof setTab === 'function') {
       setTab('community');
     }
-
-    setTimeout(() => {
-      try {
-        window.dispatchEvent(new CustomEvent('turfington_open_direct_chat_target', { detail: chatTarget }));
-      } catch {}
-    }, 60);
   };
 
   // Filtered Users

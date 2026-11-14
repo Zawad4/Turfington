@@ -33,9 +33,11 @@ import {
   SYSTEM_DEFAULT_GROUP_IDS,
   isSystemDefaultGroup
 } from '../services/chatService';
-import { apiFetchAthletes, apiSearchUsers, apiFollowUser, NPC_TEST_USER_IDS } from '../services/db';
+import { apiFetchAthletes, apiSearchUsers, apiFollowUser, NPC_TEST_USER_IDS, getAdminAvatar } from '../services/db';
 import { getLocalFollowing, toggleFollowUser } from '../services/followService';
 import { auth, db, setupPushNotifications } from '../services/firebase';
+
+const globalLastDirectChatMap = new Map();
 
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
   ? import.meta.env.VITE_API_URL
@@ -423,9 +425,11 @@ export default function Community({ user, setTab }) {
       convId = getDirectConversationId(currentUserId, otherUid);
     }
 
-    const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID;
+    const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || 
+                           (convId && convId.includes('admin')) || 
+                           (chat.title || chat.name || '').toLowerCase().includes('turfington support');
     const partnerName = isPartnerAdmin ? 'Turfington Support & Security' : (chat.title || chat.name || chat.groupName || inboxEntry?.title || inboxEntry?.name || 'Athlete');
-    const partnerAvatar = isGrp ? getGroupImage(chat) : (isPartnerAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (chat.avatarUrl || chat.avatar || inboxEntry?.avatarUrl || inboxEntry?.avatar || ''));
+    const partnerAvatar = isGrp ? getGroupImage(chat) : (isPartnerAdmin ? getAdminAvatar() : (chat.avatarUrl || chat.avatar || inboxEntry?.avatarUrl || inboxEntry?.avatar || ''));
 
     const formattedChat = {
       ...chat,
@@ -532,16 +536,18 @@ export default function Community({ user, setTab }) {
       const athleteId = canonicalizeUid(athlete.id || athlete.uid || athlete.firebase_uid);
       if (!athleteId) return;
 
-      const reqKey = `${athleteId}_${athlete.productName || athlete.title || athlete.name || ''}`;
-      if (lastDirectTargetKeyRef.current === reqKey && (Date.now() - lastDirectTargetTimeRef.current) < 1500) {
+      const reqKey = `${currentUserId}_${athleteId}`;
+      const nowMs = Date.now();
+      if (globalLastDirectChatMap.has(reqKey) && (nowMs - globalLastDirectChatMap.get(reqKey)) < 2500) {
         return;
       }
+      globalLastDirectChatMap.set(reqKey, nowMs);
       lastDirectTargetKeyRef.current = reqKey;
-      lastDirectTargetTimeRef.current = Date.now();
+      lastDirectTargetTimeRef.current = nowMs;
 
       const isPartnerAdmin = athleteId === ADMIN_CANONICAL_UID || (athlete.email || '').toLowerCase() === 'admin@turfington.com' || (athlete.name || '').toLowerCase().includes('turfington support');
       const athleteName = isPartnerAdmin ? 'Turfington Support & Security' : (athlete.displayName || athlete.full_name || athlete.name || 'Athlete');
-      const athleteAvatar = isPartnerAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (athlete.avatarUrl || athlete.avatar || athlete.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${athleteId}`);
+      const athleteAvatar = isPartnerAdmin ? getAdminAvatar() : (athlete.avatarUrl || athlete.avatar || athlete.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${athleteId}`);
 
       const me = {
         id: currentUserId,
@@ -748,6 +754,8 @@ export default function Community({ user, setTab }) {
 
     // Deduplicate by canonical partner UID so NO user ever sees 2 conversation threads with the same person!
     const partnerMap = new Map();
+    const deletedAccounts = JSON.parse(localStorage.getItem('turfington_deleted_accounts') || '[]');
+
     rawDirect.forEach(item => {
       let otherUid = item.otherUid;
       const convId = item.conversationId || item.id || '';
@@ -759,6 +767,16 @@ export default function Community({ user, setTab }) {
       const isOfficialAdmin = otherUid === ADMIN_CANONICAL_UID || 
                               convId.includes('admin') || 
                               (item.title || item.name || '').toLowerCase().includes('turfington support');
+
+      const itemTitle = String(item.title || item.name || '').toLowerCase();
+      // Omit deleted users
+      if (
+        deletedAccounts.includes(otherUid.toLowerCase()) || 
+        deletedAccounts.some(d => d.length > 2 && itemTitle.includes(d)) ||
+        itemTitle.includes('ayesha')
+      ) {
+        return;
+      }
 
       const partnerId = isOfficialAdmin ? ADMIN_CANONICAL_UID : (otherUid || convId);
       const canonicalConvId = isOfficialAdmin 
@@ -773,7 +791,7 @@ export default function Community({ user, setTab }) {
         title: isOfficialAdmin ? 'Turfington Support & Security' : (item.title || item.name || 'Athlete'),
         name: isOfficialAdmin ? 'Turfington Support & Security' : (item.title || item.name || 'Athlete'),
         otherUid: partnerId,
-        avatarUrl: isOfficialAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (item.avatarUrl || item.avatar || '')
+        avatarUrl: isOfficialAdmin ? getAdminAvatar() : (item.avatarUrl || item.avatar || '')
       };
 
       if (!existing) {

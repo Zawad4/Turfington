@@ -1239,16 +1239,24 @@ export default function Discovery({
             
             {/* TABS CONTENT: 🏟 Near You (Venues first, Join Games next) */}
             {activeTab === 'Near You' && (() => {
-              const userLat = userCoordinates?.lat || 13.0827; // Default Chennai center
-              const userLng = userCoordinates?.lng || 80.2707;
+              const hasGps = Boolean(userCoordinates && typeof userCoordinates.lat === 'number' && !isNaN(userCoordinates.lat) && typeof userCoordinates.lng === 'number' && !isNaN(userCoordinates.lng));
+              const userLat = hasGps ? userCoordinates.lat : null;
+              const userLng = hasGps ? userCoordinates.lng : null;
 
               const nearbyList = activities
                 .map(turf => {
                   const tLat = parseFloat(turf.lat ?? turf.latitude) || 13.0827;
                   const tLng = parseFloat(turf.lng ?? turf.longitude) || 80.2707;
-                  const dist = haversine(userLat, userLng, tLat, tLng);
-                  const safeDist = (typeof dist === 'number' && !isNaN(dist)) ? dist : 1.0;
-                  const distanceText = safeDist < 0.2 ? 'Nearby (< 200m)' : `${safeDist} km away`;
+                  let safeDist = 0;
+                  let distanceText = 'Nearby';
+                  if (hasGps) {
+                    const dist = haversine(userLat, userLng, tLat, tLng);
+                    safeDist = (typeof dist === 'number' && !isNaN(dist)) ? dist : 0;
+                    distanceText = safeDist < 0.2 ? 'Nearby (< 200m)' : `${safeDist} km away`;
+                  } else {
+                    safeDist = 0;
+                    distanceText = 'Nearby';
+                  }
                   return { ...turf, lat: tLat, lng: tLng, distanceNum: safeDist, distanceText };
                 })
                 .filter(turf => {

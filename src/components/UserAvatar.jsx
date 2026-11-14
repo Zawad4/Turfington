@@ -24,11 +24,9 @@ export default function UserAvatar({ user, className = "w-10 h-10 text-sm", alt 
         if (av && !av.includes('dicebear.com') && !av.includes('bottts') && (av.startsWith('http') || av.startsWith('data:'))) {
           const cId = String(cand.id || cand.uid || cand.firebase_uid || '').trim().toLowerCase();
           const cEmail = String(cand.email || '').trim().toLowerCase();
-          const cName = String(cand.full_name || cand.name || cand.displayName || '').trim().toLowerCase();
           if (
             (uId && cId && uId === cId) ||
-            (uEmail && cEmail && uEmail === cEmail) ||
-            (uName && cName && uName === cName)
+            (uEmail && cEmail && uEmail === cEmail)
           ) {
             return av;
           }

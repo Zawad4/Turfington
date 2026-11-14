@@ -23,11 +23,13 @@ import {
   increment
 } from 'firebase/firestore';
 import {
-
   encryptMessageText,
   decryptMessageText,
   isMessageEncrypted
 } from './cryptoService.js';
+import { getAdminAvatar } from './db.js';
+
+const recentSentMessages = new Map();
 
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
   ? import.meta.env.VITE_API_URL
@@ -399,8 +401,8 @@ export async function getOrCreateDirectConversation(currentUser, targetUser) {
 
   const currentName = isCurrentAdmin ? 'Turfington Support & Security' : (currentUser?.displayName || currentUser?.full_name || currentUser?.name || 'Athlete');
   const targetName = isTargetAdmin ? 'Turfington Support & Security' : (targetUser?.displayName || targetUser?.full_name || targetUser?.name || 'Athlete');
-  const currentAvatar = isCurrentAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (currentUser?.avatarUrl || currentUser?.avatar || currentUser?.avatar_url || '');
-  const targetAvatar = isTargetAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (targetUser?.avatarUrl || targetUser?.avatar || targetUser?.avatar_url || '');
+  const currentAvatar = isCurrentAdmin ? getAdminAvatar() : (currentUser?.avatarUrl || currentUser?.avatar || currentUser?.avatar_url || '');
+  const targetAvatar = isTargetAdmin ? getAdminAvatar() : (targetUser?.avatarUrl || targetUser?.avatar || targetUser?.avatar_url || '');
 
   // 1. Synchronously cache in local storage for BOTH users for instant offline & cross-profile access
   try {
@@ -932,8 +934,19 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
   if (!senderUid || !text || !text.trim()) throw new Error('Sender UID and text required');
 
   const cleanText = text.trim();
+  
+  // Deduplication check: prevent identical message sent to same conversation within 2500ms
+  const dedupeKey = `${conversationId}_${senderUid}_${cleanText}`;
+  const nowMs = Date.now();
+  if (recentSentMessages.has(dedupeKey) && (nowMs - recentSentMessages.get(dedupeKey)) < 2500) {
+    console.log('Skipping duplicate message send:', dedupeKey);
+    const existingMsgs = getLocalMessages(conversationId);
+    return existingMsgs[existingMsgs.length - 1] || null;
+  }
+  recentSentMessages.set(dedupeKey, nowMs);
+
   const senderName = senderUser.displayName || senderUser.full_name || senderUser.name || 'Athlete';
-  const senderAvatar = senderUser.avatarUrl || senderUser.avatar || senderUser.avatar_url || '';
+  const senderAvatar = senderUser.avatarUrl || senderUser.avatar || senderUser.avatar_url || (senderUid === ADMIN_CANONICAL_UID ? getAdminAvatar() : '');
 
   const messageId = options.messageId || options.idempotencyKey || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const nowIso = new Date().toISOString();
@@ -982,7 +995,7 @@ export async function sendChatMessage(conversationId, senderUser, text, options 
 
   if (recipientUid === ADMIN_CANONICAL_UID) {
     recipientName = 'Turfington Support & Security';
-    recipientAvatar = 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200';
+    recipientAvatar = getAdminAvatar();
   } else if ((!recipientName || recipientName === 'Athlete') && recipientUid) {
     try {
       const allAthletes = JSON.parse(localStorage.getItem('turfington_athletes_cache') || '[]');
@@ -1496,13 +1509,18 @@ export function getLocalInboxWithDiscovery(uid) {
                   ((lastMsg.senderUid !== uid && lastMsg.senderName) ? lastMsg.senderName : null) || 
                   (msgs.find(m => m.senderUid === otherUid)?.senderName) || 'Athlete');
 
-              if (partnerName.toLowerCase().includes('ayesha')) {
+              const deletedAccounts = JSON.parse(localStorage.getItem('turfington_deleted_accounts') || '[]');
+              if (
+                deletedAccounts.includes(otherUid.toLowerCase()) || 
+                deletedAccounts.some(d => d.length > 2 && partnerName.toLowerCase().includes(d)) ||
+                partnerName.toLowerCase().includes('ayesha')
+              ) {
                 localStorage.removeItem(k);
                 continue;
               }
 
               const partnerAvatar = isPartnerAdmin
-                ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200'
+                ? getAdminAvatar()
                 : (partnerProfile?.avatarUrl || partnerProfile?.avatar || partnerProfile?.avatar_url ||
                   ((lastMsg.senderUid !== uid && lastMsg.senderAvatar) ? lastMsg.senderAvatar : null) || '');
 
@@ -1643,9 +1661,22 @@ export function subscribeToUserInbox(uid, callback) {
         }
         otherUid = canonicalizeUid(otherUid);
 
-        const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || id.includes('turfington_admin_official');
+        const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || 
+          id.includes('turfington_admin_official') || 
+          id.includes('admin') || 
+          (it.title || it.name || localMatch?.title || localMatch?.name || '').toLowerCase().includes('turfington support');
         let resolvedTitle = isPartnerAdmin ? 'Turfington Support & Security' : (it.title || it.name || localMatch?.title || localMatch?.name);
-        let resolvedAvatar = isPartnerAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (it.avatarUrl || it.avatar || localMatch?.avatarUrl || localMatch?.avatar);
+        let resolvedAvatar = isPartnerAdmin ? getAdminAvatar() : (it.avatarUrl || it.avatar || localMatch?.avatarUrl || localMatch?.avatar);
+
+        const deletedAccounts = JSON.parse(localStorage.getItem('turfington_deleted_accounts') || '[]');
+        if (
+          deletedAccounts.includes(otherUid.toLowerCase()) || 
+          deletedAccounts.some(d => d.length > 2 && resolvedTitle.toLowerCase().includes(d)) ||
+          resolvedTitle.toLowerCase().includes('ayesha')
+        ) {
+          deleteDoc(doc(db, 'users', uid, 'inbox', id)).catch(() => {});
+          return;
+        }
 
         if (!isPartnerAdmin && (!resolvedTitle || resolvedTitle === 'Athlete') && id.startsWith('direct_')) {
           if (otherUid) {
@@ -1679,13 +1710,20 @@ export function subscribeToUserInbox(uid, callback) {
         if (!id || id.includes('admin_official_turfington')) return;
         const isDirect = it.type === 'direct' || id.startsWith('direct_');
         let otherUid = canonicalizeUid(it.otherUid || (isDirect ? getOtherUidFromDirectId(id, uid) : null));
-        const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || id.includes('turfington_admin_official');
+        const isPartnerAdmin = otherUid === ADMIN_CANONICAL_UID || 
+          id.includes('turfington_admin_official') || 
+          id.includes('admin') || 
+          (it.title || it.name || '').toLowerCase().includes('turfington support');
+        
         const dedupeKey = isPartnerAdmin ? ADMIN_CANONICAL_UID : (otherUid && isDirect ? otherUid : id);
         if (!mergedMap.has(dedupeKey)) {
           mergedMap.set(dedupeKey, {
             ...it,
             id: isPartnerAdmin ? getDirectConversationId(uid, ADMIN_CANONICAL_UID) : id,
             conversationId: isPartnerAdmin ? getDirectConversationId(uid, ADMIN_CANONICAL_UID) : id,
+            avatarUrl: isPartnerAdmin ? getAdminAvatar() : (it.avatarUrl || it.avatar || ''),
+            title: isPartnerAdmin ? 'Turfington Support & Security' : (it.title || it.name || 'Athlete'),
+            name: isPartnerAdmin ? 'Turfington Support & Security' : (it.title || it.name || 'Athlete'),
             otherUid: isPartnerAdmin ? ADMIN_CANONICAL_UID : otherUid
           });
         }
@@ -1777,7 +1815,7 @@ export function subscribeToUserInbox(uid, callback) {
             }
 
             let title = isPartnerAdmin ? 'Turfington Support & Security' : (cData.title || cData.name || (isDirect ? 'Athlete' : 'Sports Group'));
-            let avatarUrl = isPartnerAdmin ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200' : (cData.avatarUrl || cData.avatar || '');
+            let avatarUrl = isPartnerAdmin ? getAdminAvatar() : (cData.avatarUrl || cData.avatar || '');
 
             if (isDirect && otherUid && !isPartnerAdmin) {
               try {

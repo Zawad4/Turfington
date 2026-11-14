@@ -271,7 +271,7 @@ export default function Profile({
     : `@${(user?.full_name || user?.name || user?.email?.split('@')[0] || 'player').toString().toLowerCase().replace(/[^a-z0-9]/g, '')}_${(user?.id || user?.firebase_uid || '9842').toString().slice(-4)}`;
 
   const [editName, setEditName] = useState(user?.full_name || user?.name || '');
-  const [editTitle, setEditTitle] = useState(user?.title || (role === 'owner' ? 'Venue Owner' : 'Sports Player'));
+  const [editTitle, setEditTitle] = useState(user?.title || (role === 'admin' ? 'Support & Security Desk' : role === 'owner' ? 'Venue Owner' : 'Sports Player'));
   const [editAvatar, setEditAvatar] = useState(user?.avatar_url || user?.avatar || '');
   const [editPlayerId, setEditPlayerId] = useState(initialPlayerId);
   const [copiedId, setCopiedId] = useState(false);
@@ -304,9 +304,14 @@ export default function Profile({
   const [followingList, setFollowingList] = useState([]);
 
   // Live account verification state
-  const [isVerified, setIsVerified] = useState(!!user?.is_verified);
+  const isUserAdmin = user?.role === 'admin' || user?.is_admin || role === 'admin' || (user?.email || '').toLowerCase() === 'admin@turfington.com';
+  const [isVerified, setIsVerified] = useState(isUserAdmin || !!user?.is_verified);
 
   useEffect(() => {
+    if (isUserAdmin) {
+      setIsVerified(true);
+      return;
+    }
     setIsVerified(!!user?.is_verified);
     const uid = user?.id || user?.uid || user?.firebase_uid;
     if (uid) {
@@ -325,7 +330,7 @@ export default function Profile({
     };
     window.addEventListener('turfington_user_verified', handleVerifyEvent);
     return () => window.removeEventListener('turfington_user_verified', handleVerifyEvent);
-  }, [user, currentUserId]);
+  }, [user, currentUserId, isUserAdmin]);
 
   useEffect(() => {
     if (!user && !currentUserId) return;
@@ -424,7 +429,7 @@ export default function Profile({
   useEffect(() => {
     if (user) {
       setEditName(user.full_name || user.name || '');
-      setEditTitle(user.title || (role === 'owner' ? 'Venue Owner' : 'Sports Player'));
+      setEditTitle(user.title || (role === 'admin' ? 'Support & Security Desk' : role === 'owner' ? 'Venue Owner' : 'Sports Player'));
       setEditAvatar(user.avatar_url || user.avatar || '');
       const pid = (typeof user.player_id === 'string' && user.player_id)
         || (typeof user.handle === 'string' && user.handle)
@@ -599,11 +604,17 @@ export default function Profile({
               <VerifiedBadge size="md" className="ml-0.5" />
             )}
             <span className={`inline-flex items-center text-[10px] font-extrabold uppercase px-3 py-1 rounded-full border ${
-              role === 'owner'
+              role === 'admin' || user?.role === 'admin' || user?.is_admin
+                ? 'bg-purple-500/15 text-purple-400 border-purple-500/25'
+                : role === 'owner'
                 ? 'bg-violet-500/15 text-violet-400 border-violet-500/25'
                 : 'bg-indigo-500/15 text-indigo-400 border-indigo-500/25'
             }`}>
-              {role === 'owner' ? '🏟️ Venue Owner' : '🏃 Player'}
+              {role === 'admin' || user?.role === 'admin' || user?.is_admin
+                ? '🛡️ Support & Security Staff'
+                : role === 'owner'
+                ? '🏟️ Venue Owner'
+                : '🏃 Player'}
             </span>
           </div>
 

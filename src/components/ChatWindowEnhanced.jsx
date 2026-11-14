@@ -944,6 +944,9 @@ export default function ChatWindowEnhanced({
                       <span className={`font-black ${isSelf ? 'text-indigo-400' : 'text-emerald-400'}`}>
                         {isSelf ? 'You' : senderName}
                       </span>
+                      {(msg.is_verified || msg.senderUid === 'turfington_admin_official' || (isSelf && (currentUser?.is_verified || currentUser?.role === 'admin' || currentUser?.is_admin))) && (
+                        <VerifiedBadge size="xs" />
+                      )}
                       {isAdminSender && (
                         <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                           Host

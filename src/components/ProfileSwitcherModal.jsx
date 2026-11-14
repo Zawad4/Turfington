@@ -71,50 +71,76 @@ export default function ProfileSwitcherModal({
   // Load database-synced real profiles on mount or open
   useEffect(() => {
     if (!isOpen) return;
-    async function loadDbProfiles() {
-      setLoadingProfiles(true);
-      // Ensure activeUser is registered into interconnected accounts
+
+    const isCurrentAdmin = activeUser?.role === 'admin' || activeUser?.is_admin === true || (activeUser?.email || '').toLowerCase() === 'admin@turfington.com';
+
+    // 1. Instant zero-latency load from local storage
+    try {
       if (activeUser) {
         saveInterconnectedAccount(activeUser);
       }
-
-      const ownerKey = activeUser?.email || activeUser?.id;
-      const dbProfiles = await apiFetchUserSavedProfiles(ownerKey);
-
-      // Merge active user with all interconnected profiles without duplicates
-      const map = new Map();
-      if (activeUser) {
-        const ak = String(activeUser.email || activeUser.id || '').trim().toLowerCase();
-        if (ak) map.set(ak, activeUser);
+      const localAccs = getInterconnectedAccounts();
+      const initialVisible = isCurrentAdmin
+        ? localAccs
+        : localAccs.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
+      if (initialVisible.length > 0) {
+        setProfiles(initialVisible);
+      } else {
+        setLoadingProfiles(true);
       }
-      dbProfiles.forEach(p => {
-        const pk = String(p.email || p.id || '').trim().toLowerCase();
-        if (pk) {
-          if (map.has(pk)) {
-            map.set(pk, { ...map.get(pk), ...p });
-          } else {
-            map.set(pk, p);
-          }
-        }
-      });
+    } catch {
+      setLoadingProfiles(true);
+    }
 
-      const list = Array.from(map.values());
-      const isCurrentAdmin = activeUser?.role === 'admin' || activeUser?.is_admin === true || (activeUser?.email || '').toLowerCase() === 'admin@turfington.com';
-      const visibleProfiles = isCurrentAdmin 
-        ? list 
-        : list.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
-      setProfiles(visibleProfiles);
-      setLoadingProfiles(false);
+    // 2. Background database sync with timeout protection (cannot freeze)
+    async function loadDbProfiles() {
+      try {
+        const ownerKey = activeUser?.email || activeUser?.id;
+        const fetchPromise = apiFetchUserSavedProfiles(ownerKey);
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 2000));
+        const dbProfiles = await Promise.race([fetchPromise, timeoutPromise]);
+
+        // Merge active user with all interconnected profiles without duplicates
+        const map = new Map();
+        if (activeUser) {
+          const ak = String(activeUser.email || activeUser.id || '').trim().toLowerCase();
+          if (ak) map.set(ak, activeUser);
+        }
+        if (Array.isArray(dbProfiles)) {
+          dbProfiles.forEach(p => {
+            const pk = String(p.email || p.id || '').trim().toLowerCase();
+            if (pk) {
+              if (map.has(pk)) {
+                map.set(pk, { ...map.get(pk), ...p });
+              } else {
+                map.set(pk, p);
+              }
+            }
+          });
+        }
+
+        const list = Array.from(map.values());
+        const visibleProfiles = isCurrentAdmin 
+          ? list 
+          : list.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
+        if (visibleProfiles.length > 0) {
+          setProfiles(visibleProfiles);
+        }
+      } catch (err) {
+        console.warn('ProfileSwitcherModal loadDbProfiles notice:', err);
+      } finally {
+        setLoadingProfiles(false);
+      }
     }
     loadDbProfiles();
 
     const handleAccountsUpdated = (e) => {
       if (e.detail && Array.isArray(e.detail)) {
-        const isCurrentAdmin = activeUser?.role === 'admin' || activeUser?.is_admin === true || (activeUser?.email || '').toLowerCase() === 'admin@turfington.com';
         const visibleList = isCurrentAdmin
           ? e.detail
           : e.detail.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
         setProfiles(visibleList);
+        setLoadingProfiles(false);
       }
     };
     window.addEventListener('turfington_accounts_updated', handleAccountsUpdated);

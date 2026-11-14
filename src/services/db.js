@@ -69,9 +69,33 @@ const setLocalProfile = (profile) => {
     if (profile.id) {
       localStorage.setItem('turfington_profile_' + profile.id, serialized);
     }
-    localStorage.setItem('turfington_current_profile', serialized);
-    localStorage.setItem('turfington_active_user', serialized);
-    localStorage.setItem('turfington_user', serialized);
+    if (profile.email) {
+      localStorage.setItem('turfington_profile_' + profile.email.trim().toLowerCase(), serialized);
+    }
+
+    // ONLY update global active user if this profile matches the currently active user
+    const curActiveRaw = localStorage.getItem('turfington_active_user');
+    let isActive = false;
+    if (curActiveRaw) {
+      try {
+        const curActive = JSON.parse(curActiveRaw);
+        if (
+          (curActive.id && (curActive.id === profile.id || curActive.id === profile.firebase_uid)) ||
+          (curActive.firebase_uid && (curActive.firebase_uid === profile.id || curActive.firebase_uid === profile.firebase_uid)) ||
+          (curActive.email && profile.email && curActive.email.toLowerCase().trim() === profile.email.toLowerCase().trim())
+        ) {
+          isActive = true;
+        }
+      } catch {}
+    } else {
+      isActive = true;
+    }
+
+    if (isActive) {
+      localStorage.setItem('turfington_current_profile', serialized);
+      localStorage.setItem('turfington_active_user', serialized);
+      localStorage.setItem('turfington_user', serialized);
+    }
 
     // Sync into turfington_accounts
     const accStr = localStorage.getItem('turfington_accounts');
@@ -276,8 +300,18 @@ export async function apiCreateProfile(profileData) {
 export async function apiUpdateProfile(profileId, updates) {
   let existing = null;
   try {
-    const cachedStr = localStorage.getItem('turfington_profile_' + profileId) || localStorage.getItem('turfington_current_profile');
-    if (cachedStr) existing = JSON.parse(cachedStr);
+    const cachedStr = localStorage.getItem('turfington_profile_' + profileId);
+    if (cachedStr) {
+      existing = JSON.parse(cachedStr);
+    } else {
+      const curStr = localStorage.getItem('turfington_current_profile');
+      if (curStr) {
+        const cur = JSON.parse(curStr);
+        if (cur.id === profileId || cur.firebase_uid === profileId || cur.email === profileId) {
+          existing = cur;
+        }
+      }
+    }
   } catch {}
 
   const updatedProfile = {
@@ -288,6 +322,7 @@ export async function apiUpdateProfile(profileId, updates) {
   };
 
   setLocalProfile(updatedProfile);
+  saveInterconnectedAccount(updatedProfile);
 
   // Persist to Express server.js
   fetch(`${API_BASE}/api/profiles/${encodeURIComponent(profileId)}`, {
@@ -318,6 +353,37 @@ export function calculateAndUpdateDailyStreak(user) {
   return user;
 }
 
+export const DEFAULT_ADMIN_SHIELD_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%2313131c' stroke='%238b5cf6' stroke-width='4'/><path d='M50 18 L76 28 V50 C76 66 64 78 50 82 C36 78 24 66 24 50 V28 Z' fill='%2322194d' stroke='%23a855f7' stroke-width='3'/><path d='M42 50 L48 56 L60 42' stroke='%2334d399' stroke-width='5' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>";
+
+export function getAdminAvatar() {
+  if (typeof localStorage === 'undefined') return DEFAULT_ADMIN_SHIELD_AVATAR;
+  try {
+    const cached = localStorage.getItem('turfington_profile_turfington_admin_official') || localStorage.getItem('turfington_profile_admin@turfington.com');
+    if (cached) {
+      const p = JSON.parse(cached);
+      const av = p.avatar || p.avatarUrl || p.avatar_url;
+      if (av && !av.includes('photo-1560250097-0b93528c311a')) return av;
+    }
+    const conn = JSON.parse(localStorage.getItem('turfington_connected_accounts') || '[]');
+    if (Array.isArray(conn)) {
+      const adminAcc = conn.find(a => a && (a.id === 'turfington_admin_official' || (a.email || '').toLowerCase() === 'admin@turfington.com'));
+      if (adminAcc) {
+        const av = adminAcc.avatar || adminAcc.avatarUrl || adminAcc.avatar_url;
+        if (av && !av.includes('photo-1560250097-0b93528c311a')) return av;
+      }
+    }
+    const activeRaw = localStorage.getItem('turfington_active_user');
+    if (activeRaw) {
+      const active = JSON.parse(activeRaw);
+      if (active && (active.role === 'admin' || active.is_admin || (active.email || '').toLowerCase() === 'admin@turfington.com')) {
+        const av = active.avatar || active.avatarUrl || active.avatar_url;
+        if (av && !av.includes('photo-1560250097-0b93528c311a')) return av;
+      }
+    }
+  } catch {}
+  return DEFAULT_ADMIN_SHIELD_AVATAR;
+}
+
 export const OFFICIAL_ADMIN_ACCOUNT = {
   id: 'turfington_admin_official',
   uid: 'turfington_admin_official',
@@ -330,9 +396,9 @@ export const OFFICIAL_ADMIN_ACCOUNT = {
   is_admin: true,
   is_verified: true,
   badge: 'Support & Security Desk',
-  avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200',
-  avatarUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200',
-  avatar_url: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200',
+  avatar: DEFAULT_ADMIN_SHIELD_AVATAR,
+  avatarUrl: DEFAULT_ADMIN_SHIELD_AVATAR,
+  avatar_url: DEFAULT_ADMIN_SHIELD_AVATAR,
   sport: 'Platform Security & Verification',
   bio: 'Official Turfington Customer Support & Verification Desk. We monitor activities and verify player & venue owner profiles.',
   is_profile_complete: true,
@@ -498,24 +564,30 @@ export async function apiFetchUserSavedProfiles(ownerEmailOrUid) {
     if (k) map.set(k, p);
   });
 
-  // 2. Query Firestore profiles if owner identifier is provided
+  // 2. Query Firestore profiles if owner identifier is provided (protected by 2s timeout)
   try {
-    if (ownerEmailOrUid) {
+    if (ownerEmailOrUid && db) {
       const q1 = query(collection(db, 'profiles'), where('owner_email', '==', ownerEmailOrUid));
-      const snap1 = await getDocs(q1);
-      snap1.docs.forEach(d => {
-        const data = { id: d.id, ...d.data() };
-        const k = String(data.email || data.id || data.firebase_uid || '').trim().toLowerCase();
-        if (k && !map.has(k)) map.set(k, data);
-      });
+      const timeout1 = new Promise(resolve => setTimeout(() => resolve(null), 2000));
+      const snap1 = await Promise.race([getDocs(q1).catch(() => null), timeout1]);
+      if (snap1 && !snap1.empty) {
+        snap1.docs.forEach(d => {
+          const data = { id: d.id, ...d.data() };
+          const k = String(data.email || data.id || data.firebase_uid || '').trim().toLowerCase();
+          if (k && !map.has(k)) map.set(k, data);
+        });
+      }
 
       const q2 = query(collection(db, 'profiles'), where('email', '==', ownerEmailOrUid));
-      const snap2 = await getDocs(q2);
-      snap2.docs.forEach(d => {
-        const data = { id: d.id, ...d.data() };
-        const k = String(data.email || data.id || data.firebase_uid || '').trim().toLowerCase();
-        if (k && !map.has(k)) map.set(k, data);
-      });
+      const timeout2 = new Promise(resolve => setTimeout(() => resolve(null), 2000));
+      const snap2 = await Promise.race([getDocs(q2).catch(() => null), timeout2]);
+      if (snap2 && !snap2.empty) {
+        snap2.docs.forEach(d => {
+          const data = { id: d.id, ...d.data() };
+          const k = String(data.email || data.id || data.firebase_uid || '').trim().toLowerCase();
+          if (k && !map.has(k)) map.set(k, data);
+        });
+      }
     }
   } catch (err) {
     console.warn('apiFetchUserSavedProfiles Firestore notice:', err);
@@ -987,6 +1059,73 @@ export async function apiDeleteAccount(userOrIdentifier, confirmPassword = null)
         localStorage.setItem('turfington_accounts', JSON.stringify(accounts));
       } catch {}
     }
+
+    // Purge from interconnected accounts
+    try {
+      const connStr = localStorage.getItem(CONNECTED_ACCOUNTS_KEY);
+      if (connStr) {
+        const connList = JSON.parse(connStr);
+        if (Array.isArray(connList)) {
+          const cleaned = connList.filter(acc => {
+            if (!acc) return false;
+            const aid = String(acc.id || acc.firebase_uid || acc.uid || '').trim().toLowerCase();
+            const aem = String(acc.email || '').trim().toLowerCase();
+            return !uids.has(aid) && !emails.has(aem) && !allTargets.map(t => String(t).toLowerCase()).includes(aid) && !allTargets.map(t => String(t).toLowerCase()).includes(aem);
+          });
+          localStorage.setItem(CONNECTED_ACCOUNTS_KEY, JSON.stringify(cleaned));
+        }
+      }
+    } catch {}
+
+    // Record in permanently deleted accounts list
+    try {
+      const delStr = localStorage.getItem('turfington_deleted_accounts');
+      const delList = delStr ? JSON.parse(delStr) : [];
+      allTargets.forEach(t => {
+        if (t) delList.push(String(t).toLowerCase().trim());
+      });
+      localStorage.setItem('turfington_deleted_accounts', JSON.stringify(Array.from(new Set(delList))));
+    } catch {}
+
+    // Purge user from ALL inbox keys and chat message threads on this client
+    try {
+      const delKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (key.startsWith('turfington_inbox_')) {
+          const rawInbox = localStorage.getItem(key);
+          if (rawInbox) {
+            try {
+              const items = JSON.parse(rawInbox);
+              if (Array.isArray(items)) {
+                const filtered = items.filter(it => {
+                  if (!it) return false;
+                  const other = String(it.otherUid || '').toLowerCase().trim();
+                  const cid = String(it.conversationId || it.id || '').toLowerCase().trim();
+                  const title = String(it.title || it.name || '').toLowerCase().trim();
+                  for (const target of allTargets) {
+                    const t = String(target).toLowerCase().trim();
+                    if (other === t || cid.includes(t) || (t.length > 2 && title.includes(t))) return false;
+                  }
+                  return true;
+                });
+                localStorage.setItem(key, JSON.stringify(filtered));
+              }
+            } catch {}
+          }
+        } else if (key.startsWith('turfington_chat_messages_')) {
+          for (const target of allTargets) {
+            const t = String(target).toLowerCase().trim();
+            if (key.toLowerCase().includes(t)) {
+              delKeys.push(key);
+              break;
+            }
+          }
+        }
+      }
+      delKeys.forEach(k => localStorage.removeItem(k));
+    } catch {}
 
     try { sessionStorage.clear(); } catch {}
   } catch (lsErr) {
