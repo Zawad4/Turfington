@@ -8,6 +8,7 @@ import {
   Sparkles, CheckCircle2, Lock, Radio, MapPin
 } from 'lucide-react';
 import UserAvatar from '../components/UserAvatar';
+import VerifiedBadge from '../components/VerifiedBadge';
 import SportIcon from '../components/SportIcon';
 import {
   apiFetchAllUsersForAdmin,
@@ -529,14 +530,12 @@ export default function AdminSecurity({ user, setTab, onOpenProfileSwitcher }) {
                           </div>
 
                           <div className="min-w-0">
-                            <div className="flex items-center space-x-1.5">
+                            <div className="flex items-center space-x-1.5 flex-wrap">
                               <h3 className="font-display font-black text-white text-sm truncate max-w-[140px] sm:max-w-[170px]">
                                 {u.full_name || u.name || 'Member'}
                               </h3>
                               {u.is_verified && (
-                                <span title="Verified Profile">
-                                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                                </span>
+                                <VerifiedBadge size="xs" />
                               )}
                             </div>
                             <p className="text-[11px] text-neutral-400 truncate mt-0.5">

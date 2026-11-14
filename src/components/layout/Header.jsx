@@ -11,6 +11,7 @@ import {
   Menu
 } from 'lucide-react';
 import UserAvatar from '../UserAvatar';
+import VerifiedBadge from '../VerifiedBadge';
 
 export default function Header({
   activeTab,
@@ -107,9 +108,12 @@ export default function Header({
               className="flex items-center space-x-2.5 px-3 py-2 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] transition-all group"
             >
               <UserAvatar user={user} className="w-7 h-7 text-xs" />
-              <span className="text-xs font-bold text-white max-w-[120px] truncate">
-                {user?.full_name || 'Athlete'}
-              </span>
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="text-xs font-bold text-white max-w-[120px] truncate">
+                  {user?.full_name || 'Athlete'}
+                </span>
+                {user?.is_verified && <VerifiedBadge size="xs" />}
+              </div>
               <ChevronDown
                 className={`w-3.5 h-3.5 text-neutral-400 transition-transform ${
                   showUserMenu ? 'rotate-180' : ''
@@ -128,7 +132,10 @@ export default function Header({
                 >
                   {/* User info header */}
                   <div className="px-4 py-3.5 border-b border-white/5">
-                    <p className="font-bold text-white text-sm">{user?.full_name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-bold text-white text-sm truncate">{user?.full_name}</p>
+                      {user?.is_verified && <VerifiedBadge size="xs" />}
+                    </div>
                     <p className="text-[10px] text-neutral-500 mt-0.5 truncate">
                       {user?.email || user?.phone || 'Turfington Member'}
                     </p>

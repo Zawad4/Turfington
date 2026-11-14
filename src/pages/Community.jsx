@@ -11,6 +11,7 @@ import { doc, deleteDoc } from 'firebase/firestore';
 import SportIcon from '../components/SportIcon';
 import ChatWindowEnhanced from '../components/ChatWindowEnhanced';
 import UserAvatar from '../components/UserAvatar';
+import VerifiedBadge from '../components/VerifiedBadge';
 import {
   subscribeToUserInbox,
   subscribeToCommunityGroups,
@@ -1357,6 +1358,9 @@ export default function Community({ user, setTab }) {
                               <h4 className="font-display font-black text-sm text-white truncate tracking-tight">
                                 {displayTitle}
                               </h4>
+                              {(item.is_verified || matchedAthlete?.is_verified || otherUid === ADMIN_CANONICAL_UID) && (
+                                <VerifiedBadge size="xs" />
+                              )}
                             </div>
 
                             <span className="text-xs text-neutral-500 flex-shrink-0">

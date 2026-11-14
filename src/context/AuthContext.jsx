@@ -45,6 +45,17 @@ export function AuthProvider({ children }) {
 
           // If the user previously switched to a specific account, don't overwrite it with fbUser
           if (currentActive && currentActive.id && currentActive.id !== fbUser.uid && currentActive.email !== fbUser.email) {
+            // Re-fetch latest verification state for current active account
+            try {
+              const activeProf = await apiFetchProfile(currentActive.id);
+              if (activeProf && typeof activeProf.is_verified === 'boolean') {
+                const refreshed = { ...currentActive, ...activeProf, is_verified: activeProf.is_verified };
+                setUser(refreshed);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(refreshed));
+                setAuthLoading(false);
+                return;
+              }
+            } catch {}
             setUser(currentActive);
             setAuthLoading(false);
             return;
@@ -55,7 +66,7 @@ export function AuthProvider({ children }) {
             profile = await apiFetchProfileByEmail(fbUser.email);
           }
           if (profile) {
-            setUser((prev) => ({ ...prev, ...profile }));
+            setUser((prev) => ({ ...prev, ...profile, is_verified: !!profile.is_verified }));
             ensureUserProfile(profile).catch(() => {});
           } else {
             const fallbackProfile = {
@@ -65,6 +76,7 @@ export function AuthProvider({ children }) {
               email: fbUser.email || '',
               avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200',
               role: 'player',
+              is_verified: false,
               auth_provider: fbUser.providerData?.some((p) => p.providerId === 'google.com') ? 'google' : 'email'
             };
             setUser(fallbackProfile);
@@ -80,6 +92,29 @@ export function AuthProvider({ children }) {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // Real-time verification listener across tabs and components
+  useEffect(() => {
+    const handleVerifyEvent = (e) => {
+      const { userId, isVerified } = e.detail || {};
+      if (!userId) return;
+      setUser(prev => {
+        if (!prev) return prev;
+        const myId = prev.id || prev.uid || prev.firebase_uid;
+        if (myId === userId || prev.email === userId) {
+          const updated = { ...prev, is_verified: !!isVerified };
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+            localStorage.setItem('turfington_current_profile', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('turfington_user_verified', handleVerifyEvent);
+    return () => window.removeEventListener('turfington_user_verified', handleVerifyEvent);
   }, []);
 
   const login = useCallback((userData) => {
@@ -119,7 +154,9 @@ export function AuthProvider({ children }) {
       avatar: selectedProfile.avatar_url || selectedProfile.avatar || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200',
       coverImage: selectedProfile.cover_image || selectedProfile.coverImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80',
       is_profile_complete: true,
-      socials: selectedProfile.socials || {}
+      is_verified: !!selectedProfile.is_verified,
+      socials: selectedProfile.socials || {},
+      ...selectedProfile
     };
     setUser(sanitized);
     apiSaveSavedProfile(sanitized, sanitized.email || sanitized.id).catch(() => {});

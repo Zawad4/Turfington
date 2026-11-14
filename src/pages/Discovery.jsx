@@ -11,6 +11,7 @@ import {
 import SportIcon from '../components/SportIcon';
 import VenueImage from '../components/VenueImage';
 import UserAvatar from '../components/UserAvatar';
+import VerifiedBadge from '../components/VerifiedBadge';
 import { apiFetchTurfs, apiFetchNearbyTurfs, apiCreateBooking, apiUpdateBookingStatus, apiFetchNearbyPlayers, apiSearchUsers, apiFollowUser, apiCreateDirectChat, apiSubscribeVenues, apiCreateHostedMatch, apiFetchHostedMatches, apiJoinHostedMatch, apiLeaveHostedMatch } from '../services/db';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import { useToast } from '../context';
@@ -1858,8 +1859,9 @@ export default function Discovery({
                                 className="w-13 h-13 text-base border-2 border-indigo-500/30 group-hover:border-indigo-400 transition-colors shrink-0"
                               />
                               <div className="text-left overflow-hidden">
-                                <h3 className="font-bold text-white text-base truncate group-hover:text-indigo-400 transition-colors">
-                                  {player.full_name || player.name || 'Sports Player'}
+                                <h3 className="font-bold text-white text-base truncate group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                                  <span className="truncate">{player.full_name || player.name || 'Sports Player'}</span>
+                                  {player.is_verified && <VerifiedBadge size="xs" />}
                                 </h3>
                                 <p className="text-xs text-indigo-300 font-mono font-bold truncate">
                                   {displayPlayerId}
@@ -2643,8 +2645,9 @@ export default function Discovery({
                 </div>
 
                 <div className="space-y-1">
-                  <h3 className="text-xl font-display font-black text-white">
-                    {selectedPlayerModal.full_name || 'Sports Player'}
+                  <h3 className="text-xl font-display font-black text-white flex items-center justify-center gap-1.5 flex-wrap">
+                    <span>{selectedPlayerModal.full_name || 'Sports Player'}</span>
+                    {selectedPlayerModal.is_verified && <VerifiedBadge size="sm" />}
                   </h3>
                   <p className="text-xs text-indigo-400 font-mono">
                     @{selectedPlayerModal.username || 'player'}

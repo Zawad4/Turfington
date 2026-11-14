@@ -26,6 +26,7 @@ import {
   apiFetchGroupMembers
 } from '../services/chatService';
 import UserAvatar from './UserAvatar';
+import VerifiedBadge from './VerifiedBadge';
 import { useToast } from '../context';
 import { formatTime12Hour } from '../utils/formatters';
 
@@ -705,6 +706,9 @@ export default function ChatWindowEnhanced({
               <div className="flex items-center gap-2">
                 <h3 className="font-display font-black text-white text-sm leading-snug tracking-tight group-hover/header:text-indigo-400 transition-colors flex items-center gap-1.5">
                   <span>{chat.name || chat.user || 'Sports Conversation'}</span>
+                  {(chat.is_verified || chat.otherUid === 'turfington_admin_official' || chat.role === 'admin' || chat.is_admin) && (
+                    <VerifiedBadge size="xs" />
+                  )}
                 </h3>
                 {isGroup && (
                   <span className="text-[10px] font-bold text-neutral-400 group-hover/header:text-white bg-white/5 px-2 py-0.5 rounded-full border border-white/10 flex items-center gap-1 transition-colors">

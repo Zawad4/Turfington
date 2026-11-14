@@ -28,7 +28,7 @@ import {
   UserCheck,
   Search
 } from 'lucide-react';
-import { apiUpdateProfile, apiFetchPlayerReviews, getRatingColor } from '../services/db';
+import { apiUpdateProfile, apiFetchPlayerReviews, getRatingColor, apiFetchProfile } from '../services/db';
 import { getFollowCounts, getLocalFollowing, getLocalFollowers, getFollowersList, getFollowingList, toggleFollowUser, isUserFollowing, subscribeToFollows } from '../services/followService';
 import FollowersListModal from '../components/FollowersListModal';
 import { calculateCompletedMatches, isUserBookingStrict } from '../utils/formatters';
@@ -36,6 +36,7 @@ import { useToast } from '../context';
 import { auth } from '../services/firebase';
 import UserAvatar from '../components/UserAvatar';
 import PlayerReviewSection from '../components/PlayerReviewSection';
+import VerifiedBadge from '../components/VerifiedBadge';
 
 const ALL_AVAILABLE_SPORTS = ['Football', 'Cricket', 'Badminton', 'Basketball', 'Tennis', 'Table Tennis', 'Volleyball', 'Pickleball', 'Bowling', 'Swimming', 'Squash'];
 
@@ -301,6 +302,30 @@ export default function Profile({
   const [followersModalTab, setFollowersModalTab] = useState('followers');
   const [followersList, setFollowersList] = useState([]);
   const [followingList, setFollowingList] = useState([]);
+
+  // Live account verification state
+  const [isVerified, setIsVerified] = useState(!!user?.is_verified);
+
+  useEffect(() => {
+    setIsVerified(!!user?.is_verified);
+    const uid = user?.id || user?.uid || user?.firebase_uid;
+    if (uid) {
+      apiFetchProfile(uid).then(p => {
+        if (p && typeof p.is_verified === 'boolean') {
+          setIsVerified(p.is_verified);
+        }
+      }).catch(() => {});
+    }
+
+    const handleVerifyEvent = (e) => {
+      const { userId, isVerified: status } = e.detail || {};
+      if (userId && (userId === uid || userId === user?.email)) {
+        setIsVerified(!!status);
+      }
+    };
+    window.addEventListener('turfington_user_verified', handleVerifyEvent);
+    return () => window.removeEventListener('turfington_user_verified', handleVerifyEvent);
+  }, [user, currentUserId]);
 
   useEffect(() => {
     if (!user && !currentUserId) return;
@@ -570,6 +595,9 @@ export default function Profile({
         <div className="space-y-2 max-w-lg mx-auto">
           <div className="flex items-center justify-center gap-2">
             <h1 className="text-3xl font-black font-display tracking-tight text-white">{profile.name}</h1>
+            {isVerified && (
+              <VerifiedBadge size="md" className="ml-0.5" />
+            )}
             <span className={`inline-flex items-center text-[10px] font-extrabold uppercase px-3 py-1 rounded-full border ${
               role === 'owner'
                 ? 'bg-violet-500/15 text-violet-400 border-violet-500/25'

@@ -4802,6 +4802,20 @@ export async function apiToggleUserVerification(userId, isVerified) {
         localStorage.setItem('turfington_active_user', JSON.stringify({ ...cur, ...updateData }));
       }
     }
+
+    const curProf = localStorage.getItem('turfington_current_profile');
+    if (curProf) {
+      const cur = JSON.parse(curProf);
+      if (cur.id === userId || cur.uid === userId || cur.firebase_uid === userId || cur.email === userId) {
+        localStorage.setItem('turfington_current_profile', JSON.stringify({ ...cur, ...updateData }));
+      }
+    }
+
+    const cachedProf = localStorage.getItem('turfington_profile_' + userId);
+    if (cachedProf) {
+      const p = JSON.parse(cachedProf);
+      localStorage.setItem('turfington_profile_' + userId, JSON.stringify({ ...p, ...updateData }));
+    }
   } catch {}
 
   if (typeof window !== 'undefined') {

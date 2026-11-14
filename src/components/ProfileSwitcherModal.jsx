@@ -25,6 +25,7 @@ import {
 } from '../services/db';
 import { ensureUserProfile } from '../services/chatService';
 import UserAvatar from './UserAvatar';
+import VerifiedBadge from './VerifiedBadge';
 import SportIcon from './SportIcon';
 
 const SPOTIFY_SPORTS_OPTIONS = [
@@ -638,10 +639,11 @@ export default function ProfileSwitcherModal({
                         </div>
 
                         <div className="min-w-0 text-left">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-1.5 flex-wrap">
                             <p className="text-xs font-black text-white truncate group-hover:text-indigo-400 transition-colors">
                               {prof.full_name || 'Authenticated Member'}
                             </p>
+                            {prof.is_verified && <VerifiedBadge size="xs" />}
                             <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
                               prof.role === 'admin'
                                 ? 'bg-purple-500/20 text-purple-300 border-purple-500/35'

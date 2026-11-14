@@ -1,4 +1,5 @@
 import UserAvatar from '../components/UserAvatar';
+import VerifiedBadge from '../components/VerifiedBadge';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 const { useState: _useState, useEffect: _useEffect, useMemo: _useMemo, useRef: _useRef, useCallback: _useCallback } = React;
 import { motion } from 'framer-motion';
@@ -540,8 +541,10 @@ function PlayerDashboard({ user, appBookings, setAppBookings, setTab }) {
             <Activity className="w-5 h-5 text-indigo-400" />
             <span className="text-[10px] text-indigo-400 uppercase font-extrabold tracking-widest">Your Bookings</span>
           </div>
-          <h1 className="text-3xl font-black font-display tracking-tight uppercase text-white">
-            Hey, {user?.name?.split(' ')[0] || 'Player'} 👋
+          <h1 className="text-3xl font-black font-display tracking-tight uppercase text-white flex items-center gap-2 flex-wrap">
+            <span>Hey, {user?.name?.split(' ')[0] || user?.full_name?.split(' ')[0] || 'Player'}</span>
+            {user?.is_verified && <VerifiedBadge size="md" />}
+            <span>👋</span>
           </h1>
           <p className="text-xs text-neutral-500 mt-1">Your sessions, bookings and activity</p>
         </div>

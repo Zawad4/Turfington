@@ -14,6 +14,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import UserAvatar from './UserAvatar';
+import VerifiedBadge from './VerifiedBadge';
 import { isUserFollowing } from '../services/followService';
 
 export default function FollowersListModal({
@@ -209,10 +210,11 @@ export default function FollowersListModal({
                       className="w-11 h-11 border border-white/10 shrink-0 text-sm"
                     />
                     <div className="min-w-0">
-                      <div className="flex items-center space-x-1.5">
+                      <div className="flex items-center space-x-1.5 flex-wrap">
                         <h4 className="text-white font-bold text-sm truncate group-hover:text-indigo-300 transition-colors">
                           {athlete.name || athlete.full_name || 'Athlete'}
                         </h4>
+                        {athlete.is_verified && <VerifiedBadge size="xs" />}
                         <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border shrink-0 ${
                           athlete.role === 'owner'
                             ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
