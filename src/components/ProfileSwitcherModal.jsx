@@ -174,20 +174,30 @@ export default function ProfileSwitcherModal({
   };
 
   // Complete Onboarding for NEW Accounts
-  const handleFinishOnboarding = async (chosenRole, chosenSports) => {
-    if (!onboardingNewProfile) return;
+  const handleFinishOnboarding = async (chosenRole = 'player', chosenSports = []) => {
     setAuthLoading(true);
 
     try {
-      const formattedInterests = (chosenSports || []).map(s => {
+      const targetSports = (chosenSports && chosenSports.length > 0) ? chosenSports : ['Football', 'Cricket'];
+      const formattedInterests = targetSports.map(s => {
         const item = SPOTIFY_SPORTS_OPTIONS.find(sp => sp.name === s);
         return { sport: s, level: 'Player' };
       });
 
+      const baseProfile = onboardingNewProfile || {
+        id: 'usr_' + Date.now(),
+        firebase_uid: 'usr_' + Date.now(),
+        full_name: fullName.trim() || (email.trim() ? email.trim().split('@')[0] : 'Athlete'),
+        email: email.trim() || 'user@turfington.com',
+        username: (email.trim() ? email.trim().split('@')[0] : 'user') + Math.floor(Math.random() * 1000),
+        avatar: '',
+        avatar_url: ''
+      };
+
       const completedProfile = {
-        ...onboardingNewProfile,
+        ...baseProfile,
         role: chosenRole,
-        sports_interests: chosenSports || [],
+        sports_interests: targetSports,
         interests: formattedInterests,
         is_profile_complete: true,
         stats: chosenRole === 'owner' ? [
@@ -206,23 +216,45 @@ export default function ProfileSwitcherModal({
         history: []
       };
 
+      // Sanitize non-admin account
+      if (completedProfile.role !== 'admin' && !completedProfile.is_admin) {
+        if (completedProfile.player_id === '@admin') delete completedProfile.player_id;
+        if (completedProfile.handle === '@admin') delete completedProfile.handle;
+        if (completedProfile.username === 'admin') completedProfile.username = (completedProfile.email || 'user').split('@')[0];
+        if (completedProfile.avatar && completedProfile.avatar.includes("circle cx='50' cy='50' r='48' fill='%2313131c'")) {
+          completedProfile.avatar = '';
+          completedProfile.avatar_url = '';
+        }
+      }
+
+      // 1. Immediately save activeUser and new completedProfile to local interconnected accounts
       if (activeUser) {
         saveInterconnectedAccount(activeUser);
       }
-      await apiCreateProfile({ ...completedProfile, isNewRegistration: true });
-      await apiSaveSavedProfile(completedProfile, activeUser?.email || activeUser?.id);
       saveInterconnectedAccount(completedProfile);
 
-      const allAccounts = getInterconnectedAccounts(activeUser);
+      // 2. Instant zero-latency switch and close modal immediately
+      const allAccounts = getInterconnectedAccounts(completedProfile);
       setProfiles(allAccounts);
       setAuthLoading(false);
       setOnboardingNewProfile(null);
       setShowAddForm(false);
       onSelectProfile(completedProfile);
       onClose();
+
+      // 3. Persist to Firestore & Express in the background without blocking the UI
+      apiCreateProfile(completedProfile).catch(e => console.warn('Background apiCreateProfile:', e));
+      apiSaveSavedProfile(completedProfile, activeUser?.email || activeUser?.id).catch(e => console.warn('Background apiSaveSavedProfile:', e));
     } catch (err) {
       console.error('Error completing onboarding:', err);
       setAuthLoading(false);
+      // Fallback: still close modal and proceed with draft profile
+      if (onboardingNewProfile) {
+        const fallback = { ...onboardingNewProfile, role: chosenRole, is_profile_complete: true };
+        saveInterconnectedAccount(fallback);
+        onSelectProfile(fallback);
+        onClose();
+      }
     }
   };
 
@@ -651,9 +683,9 @@ export default function ProfileSwitcherModal({
                   </button>
                   <button
                     type="button"
-                    disabled={onboardingSports.length === 0 || authLoading}
-                    onClick={() => handleFinishOnboarding('player', onboardingSports)}
-                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs uppercase tracking-wider rounded-full shadow-lg shadow-indigo-600/30 cursor-pointer disabled:opacity-50 flex items-center space-x-2"
+                    disabled={authLoading}
+                    onClick={() => handleFinishOnboarding(onboardingRole || 'player', onboardingSports)}
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs uppercase tracking-wider rounded-full shadow-lg shadow-indigo-600/30 cursor-pointer disabled:opacity-50 flex items-center space-x-2 active:scale-95 transition-all"
                   >
                     {authLoading ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
