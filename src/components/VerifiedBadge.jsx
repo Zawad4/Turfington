@@ -43,3 +43,4 @@ export default function VerifiedBadge({ size = 'md', className = '', showTooltip
     </span>
   );
 }
+

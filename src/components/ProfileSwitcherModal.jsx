@@ -79,7 +79,7 @@ export default function ProfileSwitcherModal({
       if (activeUser) {
         saveInterconnectedAccount(activeUser);
       }
-      const localAccs = getInterconnectedAccounts();
+      const localAccs = getInterconnectedAccounts(activeUser);
       const initialVisible = isCurrentAdmin
         ? localAccs
         : localAccs.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
@@ -211,7 +211,7 @@ export default function ProfileSwitcherModal({
       await apiSaveSavedProfile(completedProfile, activeUser?.email || activeUser?.id);
       saveInterconnectedAccount(completedProfile);
 
-      const allAccounts = getInterconnectedAccounts();
+      const allAccounts = getInterconnectedAccounts(activeUser);
       setProfiles(allAccounts);
       setAuthLoading(false);
       setOnboardingNewProfile(null);
@@ -274,7 +274,7 @@ export default function ProfileSwitcherModal({
           }
           await apiSaveSavedProfile(completeProfile, activeUser?.email || activeUser?.id);
           saveInterconnectedAccount(completeProfile);
-          const allAccounts = getInterconnectedAccounts();
+          const allAccounts = getInterconnectedAccounts(activeUser);
           setProfiles(allAccounts);
           setGoogleLoading(false);
           setShowAddForm(false);
@@ -405,7 +405,7 @@ export default function ProfileSwitcherModal({
         apiUpdateProfile(finalProfile.id, { role: finalRole, is_profile_complete: true }).catch(() => {});
         await apiSaveSavedProfile(finalProfile, activeUser?.email || activeUser?.id);
         saveInterconnectedAccount(finalProfile);
-        const allAccounts = getInterconnectedAccounts();
+        const allAccounts = getInterconnectedAccounts(activeUser);
         setProfiles(allAccounts);
         setAuthLoading(false);
         setShowAddForm(false);

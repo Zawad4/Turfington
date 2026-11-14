@@ -411,7 +411,7 @@ export const CONNECTED_ACCOUNTS_KEY = 'turfington_connected_accounts';
  * Returns all interconnected accounts stored on this browser/client.
  * Scans unified storage, legacy keys, active user, and merges them deduplicated.
  */
-export function getInterconnectedAccounts() {
+export function getInterconnectedAccounts(forUser = null) {
   const map = new Map();
 
   // 1. Read master unified accounts list
@@ -463,9 +463,11 @@ export function getInterconnectedAccounts() {
   } catch {}
 
   const all = Array.from(map.values());
-  const isAdmin = forUser && (forUser.role === 'admin' || forUser.is_admin === true || (forUser.email || '').toLowerCase() === 'admin@turfington.com');
-  if (forUser && !isAdmin) {
-    return all.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
+  if (forUser) {
+    const isAdmin = forUser.role === 'admin' || forUser.is_admin === true || (forUser.email || '').toLowerCase() === 'admin@turfington.com';
+    if (!isAdmin) {
+      return all.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
+    }
   }
   return all;
 }
