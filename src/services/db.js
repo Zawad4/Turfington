@@ -396,12 +396,12 @@ export function getInterconnectedAccounts() {
     }
   } catch {}
 
-  // 4. Always ensure the official Admin & Security account is available in interconnected accounts
-  if (!map.has('admin@turfington.com') && !map.has('turfington_admin_official')) {
-    map.set('admin@turfington.com', OFFICIAL_ADMIN_ACCOUNT);
+  const all = Array.from(map.values());
+  const isAdmin = forUser && (forUser.role === 'admin' || forUser.is_admin === true || (forUser.email || '').toLowerCase() === 'admin@turfington.com');
+  if (forUser && !isAdmin) {
+    return all.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
   }
-
-  return Array.from(map.values());
+  return all;
 }
 
 /**
@@ -525,6 +525,11 @@ export async function apiFetchUserSavedProfiles(ownerEmailOrUid) {
   try {
     localStorage.setItem(CONNECTED_ACCOUNTS_KEY, JSON.stringify(unified));
   } catch {}
+
+  const isOwnerAdmin = String(ownerEmailOrUid || '').toLowerCase() === 'admin@turfington.com' || String(ownerEmailOrUid || '') === 'turfington_admin_official';
+  if (!isOwnerAdmin) {
+    return unified.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
+  }
 
   return unified;
 }
@@ -1019,6 +1024,7 @@ export async function apiSearchUsers(queryStr, currentUserId = null) {
     if (currentUidStr && (uid === currentUidStr || u.firebase_uid === currentUidStr)) return;
 
     const email = (u.email || '').toLowerCase().trim();
+    if (u.role === 'admin' || u.is_admin === true || email === 'admin@turfington.com' || uid === 'turfington_admin_official') return;
     if (email === 'owner123@gmail.cpm' || email === 'owner123@gmail.com' || email.startsWith('owner123')) return;
 
     // Strict requirement: ONLY accounts created by Google or active users with valid email
@@ -1782,6 +1788,7 @@ export async function apiFetchAthletes(currentUserId) {
       if (NPC_TEST_USER_IDS.has(uid)) return; // Exclude test NPCs completely!
 
       const email = (userData.email || '').toLowerCase().trim();
+      if (userData.role === 'admin' || userData.is_admin === true || email === 'admin@turfington.com' || uid === 'turfington_admin_official') return;
       // Exclude only the test mock owner123
       if (email === 'owner123@gmail.cpm' || email === 'owner123@gmail.com' || email.startsWith('owner123')) return;
 

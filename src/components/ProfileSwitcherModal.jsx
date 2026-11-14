@@ -98,14 +98,22 @@ export default function ProfileSwitcherModal({
       });
 
       const list = Array.from(map.values());
-      setProfiles(list);
+      const isCurrentAdmin = activeUser?.role === 'admin' || activeUser?.is_admin === true || (activeUser?.email || '').toLowerCase() === 'admin@turfington.com';
+      const visibleProfiles = isCurrentAdmin 
+        ? list 
+        : list.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
+      setProfiles(visibleProfiles);
       setLoadingProfiles(false);
     }
     loadDbProfiles();
 
     const handleAccountsUpdated = (e) => {
       if (e.detail && Array.isArray(e.detail)) {
-        setProfiles(e.detail);
+        const isCurrentAdmin = activeUser?.role === 'admin' || activeUser?.is_admin === true || (activeUser?.email || '').toLowerCase() === 'admin@turfington.com';
+        const visibleList = isCurrentAdmin
+          ? e.detail
+          : e.detail.filter(p => p && p.role !== 'admin' && !p.is_admin && (p.email || '').toLowerCase() !== 'admin@turfington.com');
+        setProfiles(visibleList);
       }
     };
     window.addEventListener('turfington_accounts_updated', handleAccountsUpdated);
