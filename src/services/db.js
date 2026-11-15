@@ -391,6 +391,8 @@ export const OFFICIAL_ADMIN_ACCOUNT = {
   name: 'Turfington Support & Security',
   full_name: 'Turfington Support & Security',
   displayName: 'Turfington Support & Security',
+  username: 'admin',
+  handle: 'admin',
   email: 'admin@turfington.com',
   role: 'admin',
   is_admin: true,
@@ -3892,6 +3894,9 @@ export async function apiDeleteMarketplaceItem(itemId) {
 export async function apiGetEmailByUsername(username) {
   if (!username) return null;
   const cleanU = String(username).trim().toLowerCase().replace(/^@/, '');
+  if (cleanU === 'admin' || cleanU === 'security' || cleanU === 'support') {
+    return 'admin@turfington.com';
+  }
 
   // 1. Check local storage profiles & accounts
   try {

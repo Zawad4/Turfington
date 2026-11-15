@@ -407,9 +407,10 @@ export default function ProfileSwitcherModal({
         setOnboardingNewProfile(newDraftProfile);
         setOnboardingStep('role');
       } else {
-        if (email.trim().toLowerCase() === 'admin@turfington.com') {
+        const cleanEmailInput = email.trim().toLowerCase().replace(/^@/, '');
+        if (cleanEmailInput === 'admin@turfington.com' || cleanEmailInput === 'admin' || cleanEmailInput === 'security' || cleanEmailInput === 'support') {
           try {
-            await signInWithEmailAndPassword(auth, email.trim(), password).catch(() => {});
+            await signInWithEmailAndPassword(auth, 'admin@turfington.com', password).catch(() => {});
           } catch {}
           let adminProf = await apiFetchProfile('turfington_admin_official').catch(() => null);
           if (!adminProf) {
